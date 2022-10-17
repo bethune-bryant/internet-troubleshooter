@@ -1,43 +1,62 @@
 #!/usr/bin/env python3
+import io
 import os
 import argparse
 import re
 import subprocess
 import sys
 import json
+from time import time
 from typing import Dict, List
 from dataclasses import dataclass, field, fields
+import yaml
+from yaml.loader import UnsafeLoader
 
-PACKET_LOSS_REGEX = re.compile(r"([\d.]+)%\s+packet\s+loss")
+from ping_test import PingResult, ping_test
+
 TRACE_IP_REGEX = re.compile(r"^\s*\d+\s*(\S+)\s+.*$")
 
 @dataclass
-class PingResult:
-    ip: str = field(repr=False)
-    packetLoss: float = field(repr=False)
-
-@dataclass
 class TraceResult:
-    pingResults: List[PingResult] = field(repr=False)
+    pingResults: List[PingResult] = field()
 
 @dataclass
 class SpeedResult:
-    result: Dict = field(repr=False)
+    result: str = field()
+    upload: float = field()
+    download: float = field()
+    latency: float = field()
 
-    def upload(self):
-        return float(self.result["upload"]["bandwidth"]) / 125000
 
-    def download(self):
-        return float(self.result["download"]["bandwidth"]) / 125000
-
-    def latency(self):
-        return float(self.result["ping"]["latency"])
+    def __init__(self, results):
+        self.result = results
+        parsed_result = json.loads(results)
+        self.upload = float(parsed_result["upload"]["bandwidth"]) / 125000
+        self.download = float(parsed_result["download"]["bandwidth"]) / 125000
+        self.latency = float(parsed_result["ping"]["latency"])
 
 @dataclass
 class TestResult:
-    pingResult: PingResult = field(repr=False)
-    traceResult: TraceResult = field(repr=False)
-    speedResult: SpeedResult = field(repr=False)
+    pingResult: PingResult = field()
+    traceResult: TraceResult = field()
+    speedResult: SpeedResult = field()
+    timeStamp: float = time()
+
+    def human_readable(self, io_target):
+        if self.pingResult is not None:
+            print("Packet Loss: {:.2f}%".format(self.pingResult.packetLoss), file=io_target)
+        
+        if self.traceResult is not None:
+            for trace_result in self.traceResult.pingResults:
+                trace_loss = trace_result.packetLoss
+                if trace_loss > 0:
+                    print("{:.2f}% {}".format(trace_loss, trace_result.ip), file=io_target)
+
+        if self.speedResult is not None:
+            print("Download:    {:.2f}Mbps\nUpload:      {:.2f}Mbps\nLatency:     {:.2f}ms".format(self.speedResult.download, self.speedResult.upload, self.speedResult.latency), file=io_target)
+
+    def to_yaml(self):
+        return yaml.dump(self)
 
 def cli_input():
     parser = argparse.ArgumentParser(description='Test internet connection.')
@@ -57,25 +76,6 @@ def cli_input():
     run_cmd.set_defaults(func=run)
 
     return parser.parse_args()
-
-def ping_test(ip, count=None):
-    uid = os.geteuid()
-
-    if count is None:
-        count = 400 if uid == 0 else 10
-
-    if uid == 0:
-        ping_result = subprocess.run(["ping", "-f", "-q", "-c", str(count), ip], capture_output=True, text=True)
-    else:
-        print("WARNING: Script not run as root, unable to flood ping.", file=sys.stderr)
-        ping_result = subprocess.run(["ping", "-q", "-c", str(count), ip], capture_output=True, text=True)
-
-    packet_loss_match = PACKET_LOSS_REGEX.search(ping_result.stdout)
-    if packet_loss_match is None:
-        print("ERROR: Cannot find packet loss in ping test.\n{}\n{}".format(ping_result.stdout, ping_result.stderr), file=sys.stderr)
-        exit(2)
-    
-    return PingResult(ip=ip, packetLoss=float(packet_loss_match.group(1)))
 
 def trace_test(ip, count=None):
     uid = os.geteuid()
@@ -101,21 +101,8 @@ def speed_test():
     if speedtest_result.returncode != 0:
         print("ERROR: Error running speedtest.\n{}".format(speedtest_result.stderr), file=sys.stderr)
         exit(4)
-    speedtest_result = json.loads(speedtest_result.stdout)
-    return SpeedResult(result = speedtest_result)
-
-def human_readable_output(test_result):
-    if test_result.pingResult is not None:
-        print("Packet Loss: {:.2f}%".format(test_result.pingResult.packetLoss))
-    
-    if test_result.traceResult is not None:
-        for trace_result in test_result.traceResult.pingResults:
-            trace_loss = trace_result.packetLoss
-            if trace_loss > 0:
-                print("{:.2f}% {}".format(trace_loss, trace_result.ip))
-
-    if test_result.speedResult is not None:
-        print("Download:    {:.2f}Mbps\nUpload:      {:.2f}Mbps\nLatency:     {:.2f}ms".format(test_result.speedResult.download(), test_result.speedResult.upload(), test_result.speedResult.latency()))
+    speedtest_result = SpeedResult(speedtest_result.stdout)
+    return speedtest_result
 
 def run(args):
     test_result = TestResult(pingResult = None, traceResult = None, speedResult=None)
@@ -129,7 +116,8 @@ def run(args):
     if not args.skip_speedtest:
         test_result.speedResult = speed_test()
 
-    human_readable_output(test_result)
+    #test_result.human_readable(sys.stdout)
+    print(yaml.load(test_result.to_yaml(), Loader=UnsafeLoader))
 
 def main():
     args = cli_input()
