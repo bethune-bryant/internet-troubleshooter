@@ -12,6 +12,14 @@ class PingResult:
     ip: str = field()
     packetLoss: float = field()
 
+    def parse_result(ip, result):
+        retval = PingResult()
+        retval.ip = ip
+        packet_loss_match = PACKET_LOSS_REGEX.search(result)
+        if packet_loss_match is not None:
+            retval.packetLoss=float(packet_loss_match.group(1))
+        return retval
+
 def ping_test(ip, count=None):
     uid = os.geteuid()
 
@@ -24,9 +32,9 @@ def ping_test(ip, count=None):
         print("WARNING: Script not run as root, unable to flood ping.", file=sys.stderr)
         ping_result = subprocess.run(["ping", "-q", "-c", str(count), ip], capture_output=True, text=True)
 
-    packet_loss_match = PACKET_LOSS_REGEX.search(ping_result.stdout)
-    if packet_loss_match is None:
+    result = parse_result(ip, ping_result.stdout)
+    if result is None:
         print("ERROR: Cannot find packet loss in ping test.\n{}\n{}".format(ping_result.stdout, ping_result.stderr), file=sys.stderr)
         exit(2)
     
-    return PingResult(ip=ip, packetLoss=float(packet_loss_match.group(1)))
+    return result
