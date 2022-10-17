@@ -13,28 +13,30 @@ class PingResult:
     packetLoss: float = field()
 
     def parse_result(ip, result):
-        retval = PingResult()
-        retval.ip = ip
         packet_loss_match = PACKET_LOSS_REGEX.search(result)
-        if packet_loss_match is not None:
-            retval.packetLoss=float(packet_loss_match.group(1))
-        return retval
+        if packet_loss_match is None:
+            return None
+        return PingResult(ip=ip, packetLoss=float(packet_loss_match.group(1)))
 
-def ping_test(ip, count=None):
-    uid = os.geteuid()
+    def execute_test(ip, count=None):
+        uid = os.geteuid()
 
-    if count is None:
-        count = 400 if uid == 0 else 10
+        if count is None:
+            count = 400 if uid == 0 else 10
 
-    if uid == 0:
-        ping_result = subprocess.run(["ping", "-f", "-q", "-c", str(count), ip], capture_output=True, text=True)
-    else:
-        print("WARNING: Script not run as root, unable to flood ping.", file=sys.stderr)
-        ping_result = subprocess.run(["ping", "-q", "-c", str(count), ip], capture_output=True, text=True)
+        if uid == 0:
+            ping_result = subprocess.run(["ping", "-f", "-q", "-c", str(count), ip], capture_output=True, text=True)
+        else:
+            print("WARNING: Script not run as root, unable to flood ping.", file=sys.stderr)
+            ping_result = subprocess.run(["ping", "-q", "-c", str(count), ip], capture_output=True, text=True)
 
-    result = parse_result(ip, ping_result.stdout)
-    if result is None:
-        print("ERROR: Cannot find packet loss in ping test.\n{}\n{}".format(ping_result.stdout, ping_result.stderr), file=sys.stderr)
-        exit(2)
-    
-    return result
+        return ping_result.stdout
+
+    def run_test(ip, count=None):
+        output = PingResult.execute_test(ip, count)
+        result = PingResult.parse_result(ip, output)
+        if result is None:
+            print("ERROR: Cannot find packet loss in ping test.\n{}".format(output), file=sys.stderr)
+            exit(2)
+        
+        return result

@@ -12,28 +12,9 @@ from dataclasses import dataclass, field, fields
 import yaml
 from yaml.loader import UnsafeLoader
 
-from ping_test import PingResult, ping_test
-
-TRACE_IP_REGEX = re.compile(r"^\s*\d+\s*(\S+)\s+.*$")
-
-@dataclass
-class TraceResult:
-    pingResults: List[PingResult] = field()
-
-@dataclass
-class SpeedResult:
-    result: str = field()
-    upload: float = field()
-    download: float = field()
-    latency: float = field()
-
-
-    def __init__(self, results):
-        self.result = results
-        parsed_result = json.loads(results)
-        self.upload = float(parsed_result["upload"]["bandwidth"]) / 125000
-        self.download = float(parsed_result["download"]["bandwidth"]) / 125000
-        self.latency = float(parsed_result["ping"]["latency"])
+from internet_troubleshooter.ping_test import PingResult
+from internet_troubleshooter.trace_test import TraceResult
+from internet_troubleshooter.speed_test import SpeedResult
 
 @dataclass
 class TestResult:
@@ -77,47 +58,20 @@ def cli_input():
 
     return parser.parse_args()
 
-def trace_test(ip, count=None):
-    uid = os.geteuid()
-
-    if count is None:
-        count = 400 if uid == 0 else 10
-
-    trace_result = subprocess.run(["traceroute", ip], capture_output=True, text=True)
-    if trace_result.returncode != 0:
-        print("ERROR: Error running traceroute.\n{}".format(trace_result.stderr), file=sys.stderr)
-        exit(3)
-    trace_ping_results = list()
-    for line in trace_result.stdout.splitlines():
-        trace_match = TRACE_IP_REGEX.search(line)
-        if trace_match:
-            trace_ip = trace_match.group(1)
-            trace_ping_result = ping_test(trace_ip, count)
-            trace_ping_results.append(trace_ping_result)
-    return TraceResult(pingResults=trace_ping_results)
-
-def speed_test():
-    speedtest_result = subprocess.run(["speedtest", "-f", "json"], capture_output=True, text=True)
-    if speedtest_result.returncode != 0:
-        print("ERROR: Error running speedtest.\n{}".format(speedtest_result.stderr), file=sys.stderr)
-        exit(4)
-    speedtest_result = SpeedResult(speedtest_result.stdout)
-    return speedtest_result
-
 def run(args):
     test_result = TestResult(pingResult = None, traceResult = None, speedResult=None)
 
     if not args.skip_pingtest:
-        test_result.pingResult = ping_test(args.ping_ip, args.ping_count)
+        test_result.pingResult = PingResult.run_test(args.ping_ip, args.ping_count)
 
         if test_result.pingResult.packetLoss > args.max_packet_loss:
-            test_result.traceResult = trace_test(args.ping_ip, args.ping_count)
+            test_result.traceResult = TraceResult.run_test(args.ping_ip, args.ping_count)
 
     if not args.skip_speedtest:
-        test_result.speedResult = speed_test()
+        test_result.speedResult = SpeedResult.run_test()
 
-    #test_result.human_readable(sys.stdout)
-    print(yaml.load(test_result.to_yaml(), Loader=UnsafeLoader))
+    test_result.human_readable(sys.stdout)
+    #print(yaml.load(test_result.to_yaml(), Loader=UnsafeLoader))
 
 def main():
     args = cli_input()
