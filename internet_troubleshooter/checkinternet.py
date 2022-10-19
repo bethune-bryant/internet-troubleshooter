@@ -53,6 +53,7 @@ def cli_input():
     run_cmd.add_argument("--skip_pingtest", action="store_true")
     run_cmd.add_argument("--min_download", default = 50.0, type = float)
     run_cmd.add_argument("--min_upload", default = 15.0, type = float)
+    run_cmd.add_argument("--format", default = "human", choices=["human", "yaml"])
 
     run_cmd.set_defaults(func=run)
 
@@ -70,8 +71,10 @@ def run(args):
     if not args.skip_speedtest:
         test_result.speedResult = SpeedResult.run_test()
 
-    test_result.human_readable(sys.stdout)
-    #print(yaml.load(test_result.to_yaml(), Loader=UnsafeLoader))
+    if args.format == "human":
+        test_result.human_readable(sys.stdout)
+    else:
+        print("---\n{}\n...\n".format(test_result.to_yaml()))
 
 def main():
     args = cli_input()
