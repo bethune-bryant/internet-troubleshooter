@@ -18,15 +18,18 @@ class TraceResult:
         trace_result = subprocess.run(["traceroute", ip], capture_output=True, text=True)
         if trace_result.returncode != 0:
             print("ERROR: Error running traceroute.\n{}".format(trace_result.stderr), file=sys.stderr)
-            exit(3)
+            return None
         return trace_result.stdout
 
     def run_test(ip, count=None):
-        trace_ping_results = list()
-        for line in TraceResult.execute_test(ip, count).splitlines():
-            trace_match = TRACE_IP_REGEX.search(line)
-            if trace_match:
-                trace_ip = trace_match.group(1)
-                trace_ping_result = PingResult.run_test(trace_ip, count)
-                trace_ping_results.append(trace_ping_result)
-        return TraceResult(pingResults=trace_ping_results)
+        results = TraceResult.execute_test(ip, count)
+        if results is not None:
+            trace_ping_results = list()
+            for line in results.splitlines():
+                trace_match = TRACE_IP_REGEX.search(line)
+                if trace_match:
+                    trace_ip = trace_match.group(1)
+                    trace_ping_result = PingResult.run_test(trace_ip, count)
+                    trace_ping_results.append(trace_ping_result)
+            return TraceResult(pingResults=trace_ping_results)
+        return None

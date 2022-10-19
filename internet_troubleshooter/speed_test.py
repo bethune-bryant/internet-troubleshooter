@@ -25,9 +25,12 @@ class SpeedResult:
         speedtest_result = subprocess.run(["speedtest", "-f", "json"], capture_output=True, text=True)
         if speedtest_result.returncode != 0:
             print("ERROR: Error running speedtest.\n{}".format(speedtest_result.stderr), file=sys.stderr)
-            exit(4)
+            return None
         return speedtest_result.stdout
 
     def run_test():
-        speedtest_result = SpeedResult(SpeedResult.execute_test())
-        return speedtest_result
+        results = SpeedResult.execute_test()
+        if results is not None:
+            return SpeedResult(SpeedResult.execute_test())
+        return None
+        

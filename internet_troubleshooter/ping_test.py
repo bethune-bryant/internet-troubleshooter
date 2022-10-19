@@ -37,6 +37,5 @@ class PingResult:
         result = PingResult.parse_result(ip, output)
         if result is None:
             print("ERROR: Cannot find packet loss in ping test.\n{}".format(output), file=sys.stderr)
-            exit(2)
-        
+
         return result

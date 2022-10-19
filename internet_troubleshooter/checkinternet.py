@@ -7,6 +7,7 @@ import subprocess
 import sys
 import json
 from time import time
+from datetime import datetime
 from typing import Dict, List
 from dataclasses import dataclass, field, fields
 import yaml
@@ -38,6 +39,10 @@ class TestResult:
 
     def to_yaml(self):
         return yaml.dump(self)
+    
+    def load_results(yaml_filename):
+        with open(yaml_filename) as f:
+            return yaml.load_all(f.read(), Loader=UnsafeLoader)
 
 def cli_input():
     parser = argparse.ArgumentParser(description='Test internet connection.')
@@ -57,6 +62,12 @@ def cli_input():
 
     run_cmd.set_defaults(func=run)
 
+    display_cmd = subparsers.add_parser("display")
+
+    display_cmd.add_argument("--yaml_file", required=True)
+
+    display_cmd.set_defaults(func=display)
+
     return parser.parse_args()
 
 def run(args):
@@ -75,6 +86,41 @@ def run(args):
         test_result.human_readable(sys.stdout)
     else:
         print("---\n{}\n...\n".format(test_result.to_yaml()))
+
+def display(args):
+    from plotly import graph_objs as go
+    from plotly.subplots import make_subplots
+
+    results = list(TestResult.load_results(args.yaml_file))
+
+    results.sort(key=lambda x: x.timeStamp)
+
+    xs = [datetime.fromtimestamp(result.timeStamp) for result in results]
+    
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.download for result in results], name="Download"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=xs, y=[50]*len(results), name="50Mbps"), secondary_y=False)
+
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.upload for result in results], name="Upload"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=xs, y=[15]*len(results), name="15Mbps"), secondary_y=False)
+    
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.latency for result in results], name="Latency"), secondary_y=True)
+    fig.add_trace(go.Scatter(x=xs, y=[20]*len(results), name="20ms"), secondary_y=True)
+
+    fig.update_layout(
+        title_text="Internet Status"
+    )
+
+    fig.update_xaxes(title_text="Test Time")
+
+    fig.update_yaxes(title_text="Internet Speed(Mbps)", rangemode="tozero", secondary_y=False)
+    fig.update_yaxes(title_text="Latency(ms)", rangemode="tozero", secondary_y=True)
+
+    fig.write_html(sys.stdout,
+                full_html=True,
+                include_plotlyjs='cdn')
+
 
 def main():
     args = cli_input()
