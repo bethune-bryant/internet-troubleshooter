@@ -95,17 +95,17 @@ def display(args):
 
     results.sort(key=lambda x: x.timeStamp)
 
-    xs = [datetime.fromtimestamp(result.timeStamp) for result in results]
+    xs = [datetime.fromtimestamp(result.timeStamp) for result in results if result.speedResult is not None]
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.download for result in results], name="Download"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.download for result in results if result.speedResult is not None], name="Download"), secondary_y=False)
     fig.add_trace(go.Scatter(x=xs, y=[50]*len(results), name="50Mbps"), secondary_y=False)
 
-    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.upload for result in results], name="Upload"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.upload for result in results if result.speedResult is not None], name="Upload"), secondary_y=False)
     fig.add_trace(go.Scatter(x=xs, y=[15]*len(results), name="15Mbps"), secondary_y=False)
     
-    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.latency for result in results], name="Latency"), secondary_y=True)
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.latency for result in results if result.speedResult is not None], name="Latency"), secondary_y=True)
     fig.add_trace(go.Scatter(x=xs, y=[20]*len(results), name="20ms"), secondary_y=True)
 
     fig.update_layout(
