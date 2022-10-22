@@ -97,25 +97,38 @@ def display(args):
 
     xs = [datetime.fromtimestamp(result.timeStamp) for result in results if result.speedResult is not None]
     
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig = make_subplots(shared_xaxes=True, rows=2, cols=1, specs=[[{"secondary_y": True}], [dict()]])
 
-    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.download for result in results if result.speedResult is not None], name="Download"), secondary_y=False)
-    fig.add_trace(go.Scatter(x=xs, y=[50]*len(results), name="50Mbps"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.download for result in results if result.speedResult is not None], name="Download"), secondary_y=False, row=1, col=1)
+    fig.add_hline(y=50,annotation_text="50Mbps", 
+              annotation_position="top left", line_dash="dash", secondary_y=False, row=1, col=1)
 
-    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.upload for result in results if result.speedResult is not None], name="Upload"), secondary_y=False)
-    fig.add_trace(go.Scatter(x=xs, y=[15]*len(results), name="15Mbps"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.upload for result in results if result.speedResult is not None], name="Upload"), secondary_y=False, row=1, col=1)
+    fig.add_hline(y=15,annotation_text="15Mbps", 
+              annotation_position="top left", line_dash="dash", secondary_y=False, row=1, col=1)
     
-    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.latency for result in results if result.speedResult is not None], name="Latency"), secondary_y=True)
-    fig.add_trace(go.Scatter(x=xs, y=[20]*len(results), name="20ms"), secondary_y=True)
+    fig.add_trace(go.Scatter(x=xs, y=[result.speedResult.latency for result in results if result.speedResult is not None], name="Latency"), secondary_y=True, row=1, col=1)
+    fig.add_hline(y=20, line_dash="dash", secondary_y=True, row=1, col=1)
+
+    fig.update_yaxes(title_text="Internet Speed(Mbps)", rangemode="tozero", secondary_y=False, row=1, col=1)
+    fig.update_yaxes(title_text="Latency(ms)", rangemode="tozero", secondary_y=True, row=1, col=1)
+    
+    xs = [datetime.fromtimestamp(result.timeStamp) for result in results if result.pingResult is not None]
+    
+    fig.add_trace(go.Scatter(x=xs, y=[result.pingResult.packetLoss for result in results if result.pingResult is not None], name="Packet Loss"), row=2, col=1)
+
+    fig.update_xaxes(title_text="Test Time", row=2, col=1)
+
+    fig.update_yaxes(title_text="% Packet Loss", rangemode="tozero", row=2, col=1)
+
+    for result in results:
+        if result.speedResult is None or result.pingResult is None:
+            fig.add_vline(x=datetime.fromtimestamp(result.timeStamp), line_dash="dot", line_color="red", row=1, col=1)
+            fig.add_vline(x=datetime.fromtimestamp(result.timeStamp), line_dash="dot", line_color="red", row=2, col=1)
 
     fig.update_layout(
         title_text="Internet Status"
     )
-
-    fig.update_xaxes(title_text="Test Time")
-
-    fig.update_yaxes(title_text="Internet Speed(Mbps)", rangemode="tozero", secondary_y=False)
-    fig.update_yaxes(title_text="Latency(ms)", rangemode="tozero", secondary_y=True)
 
     fig.write_html(sys.stdout,
                 full_html=True,
