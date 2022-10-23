@@ -6,13 +6,13 @@ import subprocess
 import sys
 from dataclasses import dataclass, field, fields
 
+
 @dataclass
 class SpeedResult:
     result: str = field()
     upload: float = field()
     download: float = field()
     latency: float = field()
-
 
     def __init__(self, results):
         self.result = results
@@ -22,9 +22,16 @@ class SpeedResult:
         self.latency = float(parsed_result["ping"]["latency"])
 
     def execute_test():
-        speedtest_result = subprocess.run(["speedtest", "-f", "json"], capture_output=True, text=True)
+        speedtest_result = subprocess.run(
+            ["speedtest", "-f", "json"], capture_output=True, text=True
+        )
         if speedtest_result.returncode != 0:
-            print("ERROR: Error running speedtest.\n{}\n{}".format(speedtest_result.stdout, speedtest_result.stderr), file=sys.stderr)
+            print(
+                "ERROR: Error running speedtest.\n{}\n{}".format(
+                    speedtest_result.stdout, speedtest_result.stderr
+                ),
+                file=sys.stderr,
+            )
             return None
         return speedtest_result.stdout
 
@@ -33,4 +40,3 @@ class SpeedResult:
         if results is not None:
             return SpeedResult(SpeedResult.execute_test())
         return None
-        

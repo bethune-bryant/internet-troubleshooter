@@ -10,14 +10,20 @@ from internet_troubleshooter.ping_test import PingResult
 
 TRACE_IP_REGEX = re.compile(r"^\s*\d+\s*(\S+)\s+.*$")
 
+
 @dataclass
 class TraceResult:
     pingResults: List[PingResult] = field()
 
     def execute_test(ip, count=None):
-        trace_result = subprocess.run(["traceroute", ip], capture_output=True, text=True)
+        trace_result = subprocess.run(
+            ["traceroute", ip], capture_output=True, text=True
+        )
         if trace_result.returncode != 0:
-            print("ERROR: Error running traceroute.\n{}".format(trace_result.stderr), file=sys.stderr)
+            print(
+                "ERROR: Error running traceroute.\n{}".format(trace_result.stderr),
+                file=sys.stderr,
+            )
             return None
         return trace_result.stdout
 
