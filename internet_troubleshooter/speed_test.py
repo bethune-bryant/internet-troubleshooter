@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field, fields
+from internet_troubleshooter.utils import summarize
 
 
 @dataclass
@@ -19,6 +20,31 @@ class SpeedResult:
         self.upload = float(parsed_result["upload"]["bandwidth"]) / 125000
         self.download = float(parsed_result["download"]["bandwidth"]) / 125000
         self.latency = float(parsed_result["ping"]["latency"])
+
+    def __str__(self):
+        return "Download:    {:.2f}Mbps\nUpload:      {:.2f}Mbps\nLatency:     {:.2f}ms".format(
+            self.download,
+            self.upload,
+            self.latency,
+        )
+    
+    def summarize(results):
+        download = [
+            result.download
+            for result in results
+            if result is not None
+        ]
+        upload = [
+            result.upload
+            for result in results
+            if result is not None
+        ]
+        latency = [
+            result.latency
+            for result in results
+            if result is not None
+        ]
+        return "{}\n\n{}\n\n{}".format(summarize(download, "Download", "Mbps"), summarize(upload, "Upload", "Mbps"), summarize(latency, "Latency", "Mbps"))
 
     def execute_test():
         speedtest_result = subprocess.run(
@@ -37,5 +63,5 @@ class SpeedResult:
     def run_test():
         results = SpeedResult.execute_test()
         if results is not None:
-            return SpeedResult(SpeedResult.execute_test())
+            return SpeedResult(results)
         return None

@@ -10,7 +10,11 @@ setup(
     author='Bryant Nelson',
     author_email='bryantstutoringservice@gmail.com',
 
-    #packages=find_packages(),
+    packages=find_packages(),
 
-    scripts=['internet_troubleshooter/checkinternet.py'],
+    entry_points={'console_scripts': [
+        'checkinternet = internet_troubleshooter.checkinternet:main',
+    ]},
+
+    setup_requires=['wheel'],
 )
