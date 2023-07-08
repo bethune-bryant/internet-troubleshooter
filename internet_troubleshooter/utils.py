@@ -6,6 +6,7 @@ def debug(cli_args, *args, **kwargs):
     if cli_args.debug:
         print(*args, **kwargs, file=sys.stderr)
 
+
 def summarize(values, title="", unit=""):
     if len(values) >= 2:
         return (
