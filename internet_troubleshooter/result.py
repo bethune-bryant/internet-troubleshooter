@@ -18,7 +18,7 @@ class TestResult:
     speedResult: SpeedResult = field()
     timeStamp: float = time()
 
-    def human_readable(self, io_target):
+    def human_readable(self, io_target=sys.stdout):
         if self.pingResult is not None:
             print(
                 "Packet Loss: {:.2f}%".format(self.pingResult.packetLoss),
@@ -27,19 +27,13 @@ class TestResult:
 
         if self.traceResult is not None:
             for trace_result in self.traceResult.pingResults:
-                trace_loss = trace_result.packetLoss
-                if trace_loss > 0:
-                    print(
-                        "{:.2f}% {}".format(trace_loss, trace_result.ip), file=io_target
-                    )
+                print(
+                    "{:.2f}% {}".format(trace_result.packetLoss, trace_result.ip), file=io_target
+                )
 
         if self.speedResult is not None:
             print(
-                "Download:    {:.2f}Mbps\nUpload:      {:.2f}Mbps\nLatency:     {:.2f}ms".format(
-                    self.speedResult.download,
-                    self.speedResult.upload,
-                    self.speedResult.latency,
-                ),
+                self.speedResult,
                 file=io_target,
             )
 
@@ -52,6 +46,20 @@ class TestResult:
 
     def get_date(self):
         return datetime.fromtimestamp(self.timeStamp)
+
+    def to_human(results, io_target=sys.stdout):
+        speedResults = [
+            result.speedResult
+            for result in results
+        ]
+        pingResults = [
+            result.pingResult
+            for result in results
+        ]
+        print(
+            "{}\n\n{}".format(SpeedResult.summarize(speedResults), PingResult.summarize(pingResults)),
+            file=io_target,
+        )
 
     def to_html(results, io_target=sys.stdout):
         from plotly import graph_objs as go

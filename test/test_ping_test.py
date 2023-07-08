@@ -1,11 +1,12 @@
 from subprocess import CompletedProcess
-import pytest
 from internet_troubleshooter.ping_test import PingResult
+
 
 def test_PingResult():
     x = PingResult(ip="1.1.1.1", packetLoss=10)
     assert x.ip == "1.1.1.1"
     assert x.packetLoss == 10
+
 
 def test_parseResult():
     test_output = '''PING google.com (172.217.1.142) 56(84) bytes of data.
@@ -17,6 +18,7 @@ rtt min/avg/max/mdev = 16.544/20.312/35.193/2.061 ms, pipe 3, ipg/ewma 16.690/20
     x = PingResult.parse_result("google.com", test_output)
     assert x.ip == "google.com"
     assert x.packetLoss == 12.34
+
 
 def test_execute_test(mocker, capsys):
     test_output = '''TEST STRING'''
