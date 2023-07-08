@@ -4,7 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 import yaml
 from yaml.loader import UnsafeLoader
-from statistics import mean, variance
+from statistics import mean
 
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult

@@ -1,9 +1,7 @@
-import os
 import json
-import re
 import subprocess
 import sys
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from internet_troubleshooter.utils import summarize
 
 
@@ -27,7 +25,7 @@ class SpeedResult:
             self.upload,
             self.latency,
         )
-    
+
     def summarize(results):
         download = [
             result.download
@@ -44,7 +42,9 @@ class SpeedResult:
             for result in results
             if result is not None
         ]
-        return "{}\n\n{}\n\n{}".format(summarize(download, "Download", "Mbps"), summarize(upload, "Upload", "Mbps"), summarize(latency, "Latency", "Mbps"))
+        return "{}\n\n{}\n\n{}".format(summarize(download, "Download", "Mbps"),
+                                       summarize(upload, "Upload", "Mbps"),
+                                       summarize(latency, "Latency", "Mbps"))
 
     def execute_test():
         speedtest_result = subprocess.run(

@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from internet_troubleshooter.utils import summarize
 
 PACKET_LOSS_REGEX = re.compile(r"([\d.]+)%\s+packet\s+loss")
@@ -21,7 +21,7 @@ class PingResult:
         if packet_loss_match is None:
             return None
         return PingResult(ip=ip, packetLoss=float(packet_loss_match.group(1)))
-    
+
     def summarize(results):
         packetLoss = [
             result.packetLoss
