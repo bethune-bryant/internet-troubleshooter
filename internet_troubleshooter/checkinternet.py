@@ -2,7 +2,6 @@
 import argparse
 from datetime import datetime
 import sys
-from statistics import mean
 
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult
@@ -36,6 +35,7 @@ def cli_input():
     display_cmd.set_defaults(func=display)
 
     return parser.parse_args()
+
 
 def run(args):
     debug(args, str(datetime.now()))
