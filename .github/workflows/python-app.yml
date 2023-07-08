@@ -28,6 +28,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install flake8 pytest pytest-mock pytest-cov
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
+        sudo apt-get install speedtest
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
