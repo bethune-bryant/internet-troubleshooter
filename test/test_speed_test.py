@@ -74,3 +74,37 @@ def test_SpeedResult():
             19.27,
         )
     )
+
+
+def test_check(mocker, capsys):
+    test_output = "HELP TEXT"
+
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(None, returncode=0, stdout=test_output),
+    )
+
+    x = SpeedResult.check()
+    assert x
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_check_error(mocker, capsys):
+    test_output = ""
+    error_output = """speedtest not found"""
+
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(
+            None, returncode=1, stdout=test_output, stderr=error_output
+        ),
+    )
+
+    x = SpeedResult.check()
+    assert not x
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "WARNING:" in captured.err
+    assert "https://www.speedtest.net/apps/cli" in captured.err
