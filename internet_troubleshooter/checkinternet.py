@@ -54,14 +54,18 @@ def run(args):
             )
 
     if not args.skip_speedtest:
-        debug(args, "Running SpeedTest")
-        test_result.speedResult = SpeedResult.run_test()
+        if SpeedResult.check():
+            debug(args, "Running SpeedTest")
+            test_result.speedResult = SpeedResult.run_test()
 
     test_result.human_readable(sys.stdout)
 
     if args.yaml_file is not None:
         debug(args, "Logging results to: ", args.yaml_file)
-        print("---\n{}\n...\n".format(test_result.to_yaml()), file=open(args.yaml_file, 'a'))
+        print(
+            "---\n{}\n...\n".format(test_result.to_yaml()),
+            file=open(args.yaml_file, "a"),
+        )
 
 
 def display(args):

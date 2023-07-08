@@ -9,11 +9,11 @@ def test_PingResult():
 
 
 def test_parseResult():
-    test_output = '''PING google.com (172.217.1.142) 56(84) bytes of data.
+    test_output = """PING google.com (172.217.1.142) 56(84) bytes of data.
 
 --- google.com ping statistics ---
 400 packets transmitted, 400 received, 12.34% packet loss, time 6659ms
-rtt min/avg/max/mdev = 16.544/20.312/35.193/2.061 ms, pipe 3, ipg/ewma 16.690/20.405 ms'''
+rtt min/avg/max/mdev = 16.544/20.312/35.193/2.061 ms, pipe 3, ipg/ewma 16.690/20.405 ms"""
 
     x = PingResult.parse_result("google.com", test_output)
     assert x.ip == "google.com"
@@ -21,16 +21,20 @@ rtt min/avg/max/mdev = 16.544/20.312/35.193/2.061 ms, pipe 3, ipg/ewma 16.690/20
 
 
 def test_execute_test(mocker, capsys):
-    test_output = '''TEST STRING'''
+    test_output = """TEST STRING"""
 
     mocker.patch("os.geteuid", return_value=1000)
-    mocker.patch('subprocess.run', return_value=CompletedProcess(None, returncode=0, stdout=test_output))
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(None, returncode=0, stdout=test_output),
+    )
 
     x = PingResult.execute_test("8.8.8.8")
     assert test_output == x
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "WARNING" in captured.err
+
 
 # def test_execute_test_failure(mocker):
 #     test_output = '''TEST STRING'''
