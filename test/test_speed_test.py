@@ -65,3 +65,12 @@ def test_SpeedResult():
     assert x.download == 58.542856
     assert x.upload == 17.1212
     assert x.latency == 19.266
+    x_str = str(x)
+    assert (
+        x_str
+        == "Download:    {}Mbps\nUpload:      {}Mbps\nLatency:     {}ms".format(
+            58.54,
+            17.12,
+            19.27,
+        )
+    )
