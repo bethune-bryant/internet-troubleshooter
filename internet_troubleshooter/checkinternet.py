@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from datetime import datetime
 import sys
 from statistics import mean
 
@@ -23,7 +24,7 @@ def cli_input():
     run_cmd.add_argument("--max_packet_loss", default=3.0, type=float)
     run_cmd.add_argument("--skip_speedtest", action="store_true")
     run_cmd.add_argument("--skip_pingtest", action="store_true")
-    run_cmd.add_argument("--format", default="human", choices=["human", "yaml"])
+    run_cmd.add_argument("--yaml_file", default=None, type=str)
 
     run_cmd.set_defaults(func=run)
 
@@ -37,6 +38,7 @@ def cli_input():
     return parser.parse_args()
 
 def run(args):
+    debug(args, str(datetime.now()))
     debug(args, "Running Tests")
     test_result = TestResult(pingResult=None, traceResult=None, speedResult=None)
 
@@ -55,10 +57,11 @@ def run(args):
         debug(args, "Running SpeedTest")
         test_result.speedResult = SpeedResult.run_test()
 
-    if args.format == "human":
-        test_result.human_readable(sys.stdout)
-    else:
-        print("---\n{}\n...\n".format(test_result.to_yaml()))
+    test_result.human_readable(sys.stdout)
+    
+    if args.yaml_file is not None:
+        debug(args, "Logging results to: ", args.yaml_file)
+        print("---\n{}\n...\n".format(test_result.to_yaml()), file=open(args.yaml_file, 'a'))
 
 
 def display(args):

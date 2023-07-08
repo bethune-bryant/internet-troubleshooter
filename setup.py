@@ -16,5 +16,10 @@ setup(
         'checkinternet = internet_troubleshooter.checkinternet:main',
     ]},
 
+    install_requires=[
+        'plotly',
+        'pyyaml',
+    ],
+
     setup_requires=['wheel'],
 )
