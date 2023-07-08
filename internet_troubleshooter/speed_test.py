@@ -26,25 +26,29 @@ class SpeedResult:
             self.latency,
         )
 
+    def check():
+        speedtest_exists = subprocess.run(
+            ["speedtest", "-h"], capture_output=True, text=True
+        )
+        if speedtest_exists.returncode != 0:
+            print(
+                "WARNING: speedtest cli not installed.\nUnable to test speed.\nSee: {}".format(
+                    "https://www.speedtest.net/apps/cli"
+                ),
+                file=sys.stderr,
+            )
+            return False
+        return True
+
     def summarize(results):
-        download = [
-            result.download
-            for result in results
-            if result is not None
-        ]
-        upload = [
-            result.upload
-            for result in results
-            if result is not None
-        ]
-        latency = [
-            result.latency
-            for result in results
-            if result is not None
-        ]
-        return "{}\n\n{}\n\n{}".format(summarize(download, "Download", "Mbps"),
-                                       summarize(upload, "Upload", "Mbps"),
-                                       summarize(latency, "Latency", "Mbps"))
+        download = [result.download for result in results if result is not None]
+        upload = [result.upload for result in results if result is not None]
+        latency = [result.latency for result in results if result is not None]
+        return "{}\n\n{}\n\n{}".format(
+            summarize(download, "Download", "Mbps"),
+            summarize(upload, "Upload", "Mbps"),
+            summarize(latency, "Latency", "Mbps"),
+        )
 
     def execute_test():
         speedtest_result = subprocess.run(

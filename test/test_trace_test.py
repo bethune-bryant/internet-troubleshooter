@@ -11,12 +11,12 @@ def test_TraceResult():
 
 
 def test_execute_test(mocker, capsys):
-    test_output = '''TEST STRING'''
+    test_output = """TEST STRING"""
 
-    mocker.patch('subprocess.run',
-                 return_value=CompletedProcess(None,
-                                               returncode=0,
-                                               stdout=test_output))
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(None, returncode=0, stdout=test_output),
+    )
 
     x = TraceResult.execute_test("8.8.8.8")
     assert test_output == x
@@ -26,14 +26,15 @@ def test_execute_test(mocker, capsys):
 
 
 def test_execute_test_error(mocker, capsys):
-    test_output = '''TEST STRING'''
-    error_output = '''ERROR STRING'''
+    test_output = """TEST STRING"""
+    error_output = """ERROR STRING"""
 
-    mocker.patch('subprocess.run',
-                 return_value=CompletedProcess(None,
-                                               returncode=1,
-                                               stdout=test_output,
-                                               stderr=error_output))
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(
+            None, returncode=1, stdout=test_output, stderr=error_output
+        ),
+    )
 
     x = TraceResult.execute_test("8.8.8.8")
     assert x is None
