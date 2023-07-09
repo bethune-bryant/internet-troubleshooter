@@ -4,23 +4,25 @@
 
 ## Overview
 
-
+This is an internet performance tracking and troubleshooting utility which uses tools like `ping`, `traceroute`, and the [SpeedTest CLI](https://www.speedtest.net/apps/cli#ubuntu).
 
 ## Getting Started
 
 To get started you can setup a Python virtual environment and use pip to install the troubleshooter.
 
 ```shell
-$ sudo apt install python3.10-venv
-$ python3 -m venv ./my_env
-$ source ./my_env/bin/activate
-$ pip install git+https://github.com/bethune-bryant/internet-troubleshooter.git
-$ checkinternet run
-WARNING: Script not run as root, unable to flood ping. Packet loss may not be accurate
-Packet Loss: 0.00%
-Download:    58.74Mbps
-Upload:      17.19Mbps
-Latency:     15.73ms
+# install speedtest-cli
+sudo apt-get install curl
+curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
+sudo apt-get install speedtest
+# install python-venv and create venv
+sudo apt install python3.10-venv
+python3 -m venv ./my_env
+source ./my_env/bin/activate
+# install internet-troubleshooter
+pip install git+https://github.com/bethune-bryant/internet-troubleshooter.git
+# run internet-troubleshooter
+checkinternet run
 ```
 
 > For a more accurate packet loss, run checkinternet as `root`.
