@@ -1,4 +1,15 @@
-from internet_troubleshooter.utils import summarize
+from internet_troubleshooter.utils import debug, summarize
+
+
+def test_debug(capsys):
+    debug(False, "TEST1")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    debug(True, "TEST2")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "TEST2\n"
 
 
 def test_summarize():

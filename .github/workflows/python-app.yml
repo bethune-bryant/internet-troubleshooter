@@ -29,7 +29,7 @@ jobs:
         pip install flake8 pytest pytest-mock pytest-cov
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
-        sudo apt-get install speedtest
+        sudo apt-get install speedtest traceroute
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -44,3 +44,6 @@ jobs:
         #files: ./coverage1.xml,./coverage2.xml # optional
         fail_ci_if_error: true # optional (default = false)
         verbose: true # optional (default = false)
+    - name: Install Package
+      run: |
+        pip install ./
