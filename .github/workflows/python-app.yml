@@ -44,3 +44,10 @@ jobs:
         #files: ./coverage1.xml,./coverage2.xml # optional
         fail_ci_if_error: true # optional (default = false)
         verbose: true # optional (default = false)
+    - name: Install and Use Package
+      run: |
+        pip install ./
+        checkinternet --debug run --yaml_file test.yaml
+        checkinternet --debug run --yaml_file test.yaml
+        checkinternet --debug run --yaml_file test.yaml
+        checkinternet --debug display --yaml_file test.yaml --format html > out.html
