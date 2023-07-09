@@ -23,11 +23,7 @@ class PingResult:
         return PingResult(ip=ip, packetLoss=float(packet_loss_match.group(1)))
 
     def summarize(results):
-        packetLoss = [
-            result.packetLoss
-            for result in results
-            if result is not None
-        ]
+        packetLoss = [result.packetLoss for result in results if result is not None]
         return "{}".format(summarize(packetLoss, "Packet Loss", "%"))
 
     def execute_test(ip, count=None):
@@ -45,6 +41,7 @@ class PingResult:
         else:
             print(
                 "WARNING: Script not run as root, unable to flood ping.",
+                "Packet loss may not be accurate.",
                 file=sys.stderr,
             )
             ping_result = subprocess.run(

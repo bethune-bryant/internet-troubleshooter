@@ -38,30 +38,30 @@ def cli_input():
 
 
 def run(args):
-    debug(args, str(datetime.now()))
-    debug(args, "Running Tests")
+    debug(args.debug, str(datetime.now()))
+    debug(args.debug, "Running Tests")
     test_result = TestResult(pingResult=None, traceResult=None, speedResult=None)
 
     if not args.skip_pingtest:
-        debug(args, "Running PingTest")
+        debug(args.debug, "Running PingTest")
         test_result.pingResult = PingResult.run_test(args.ping_ip, args.ping_count)
-        debug(args, "Ping Result: ", test_result.pingResult)
+        debug(args.debug, "Ping Result: ", test_result.pingResult)
 
         if test_result.pingResult.packetLoss > args.max_packet_loss:
-            debug(args, "Running TraceTest")
+            debug(args.debug, "Running TraceTest")
             test_result.traceResult = TraceResult.run_test(
                 args.ping_ip, args.ping_count, args.debug
             )
 
     if not args.skip_speedtest:
         if SpeedResult.check():
-            debug(args, "Running SpeedTest")
+            debug(args.debug, "Running SpeedTest")
             test_result.speedResult = SpeedResult.run_test()
 
     test_result.human_readable(sys.stdout)
 
     if args.yaml_file is not None:
-        debug(args, "Logging results to: ", args.yaml_file)
+        debug(args.debug, "Logging results to: ", args.yaml_file)
         print(
             "---\n{}\n...\n".format(test_result.to_yaml()),
             file=open(args.yaml_file, "a"),
@@ -79,7 +79,7 @@ def display(args):
 def main():
     args = cli_input()
     if args.debug:
-        debug(args, "Parsed Args: ", args)
+        debug(args.debug, "Parsed Args: ", args)
 
     args.func(args)
 
