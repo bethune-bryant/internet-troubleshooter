@@ -28,7 +28,8 @@ class TestResult:
         if self.traceResult is not None:
             for trace_result in self.traceResult.pingResults:
                 print(
-                    "{:.2f}% {}".format(trace_result.packetLoss, trace_result.ip), file=io_target
+                    "{:.2f}% {}".format(trace_result.packetLoss, trace_result.ip),
+                    file=io_target,
                 )
 
         if self.speedResult is not None:
@@ -48,16 +49,12 @@ class TestResult:
         return datetime.fromtimestamp(self.timeStamp)
 
     def to_human(results, io_target=sys.stdout):
-        speedResults = [
-            result.speedResult
-            for result in results
-        ]
-        pingResults = [
-            result.pingResult
-            for result in results
-        ]
+        speedResults = [result.speedResult for result in results]
+        pingResults = [result.pingResult for result in results]
         print(
-            "{}\n\n{}".format(SpeedResult.summarize(speedResults), PingResult.summarize(pingResults)),
+            "{}\n\n{}".format(
+                SpeedResult.summarize(speedResults), PingResult.summarize(pingResults)
+            ),
             file=io_target,
         )
 
@@ -175,7 +172,13 @@ class TestResult:
 
         fig.update_xaxes(title_text="Test Time", row=2, col=1)
 
-        fig.update_yaxes(title_text="% Packet Loss", rangemode="tozero", row=2, col=1)
+        fig.update_yaxes(
+            title_text="% Packet Loss",
+            rangemode="tozero",
+            range=[0, 100],
+            row=2,
+            col=1,
+        )
 
         for result in results:
             if result.speedResult is None or result.pingResult is None:
