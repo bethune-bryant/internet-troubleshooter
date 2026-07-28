@@ -148,6 +148,43 @@ def test_hop_ips_preserves_first_seen_order():
     ]
 
 
+def test_hop_ips_debug_logging(capsys):
+    trace_output = "\n".join(
+        [
+            " 1  10.0.0.1  0.1 ms",
+            " 2  8.8.8.8  0.2 ms",
+        ]
+    )
+
+    assert TraceResult.hop_ips(trace_output, "8.8.8.8", debug=True) == ["10.0.0.1"]
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "trace_ip:  10.0.0.1" in captured.err
+    assert "trace_ip:  8.8.8.8" in captured.err
+
+
+def test_run_test_debug_logging(mocker, capsys):
+    trace_output = " 1  192.168.1.1  0.310 ms\n 2  8.8.8.8  9.310 ms"
+    mocker.patch(
+        "internet_troubleshooter.trace_test.TraceResult.execute_test",
+        return_value=trace_output,
+    )
+    mocker.patch(
+        "internet_troubleshooter.trace_test.PingResult.run_test",
+        return_value=PingResult(ip="192.168.1.1", packetLoss=0.0),
+    )
+
+    TraceResult.run_test("8.8.8.8", debug=True)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Running Traceroute" in captured.err
+    assert "Traceroute: " in captured.err
+    assert trace_output in captured.err
+    assert "trace_ip:  192.168.1.1" in captured.err
+
+
 @pytest.mark.parametrize(
     "count, expected",
     [

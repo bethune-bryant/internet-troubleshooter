@@ -12,15 +12,32 @@ from internet_troubleshooter.utils import (
 )
 
 
-def test_debug(capsys):
+def test_debug_disabled(capsys):
     debug(False, "TEST1")
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
+
+
+def test_debug_writes_to_stderr(capsys):
     debug(True, "TEST2")
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == "TEST2\n"
+
+
+def test_debug_multiple_args(capsys):
+    debug(True, "Ping Result: ", "10.00%: 8.8.8.8")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "Ping Result:  10.00%: 8.8.8.8\n"
+
+
+def test_debug_kwargs(capsys):
+    debug(True, "line1", "line2", sep="|", end="")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "line1|line2"
 
 
 def test_summarize():
