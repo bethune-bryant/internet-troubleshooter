@@ -139,9 +139,7 @@ HTML output requires the `html` extra; without it `display --format html` fails 
 
 ### Result Log Format
 
-Each run appends one YAML document to the file, so the same file can be reused indefinitely. Results are written as plain dictionaries with `camelCase` keys using safe YAML, and are read back with a safe loader, so a results file can never execute code when it is loaded.
-
-Earlier versions serialized Python objects directly, producing `!!python/object` tags. Those files still load, and `display` prints a warning when it reads one. To migrate a legacy file, display it once and write the results out again with a current version.
+Each run appends one YAML document to the file, so the same file can be reused indefinitely. Results are written as plain dictionaries with `camelCase` keys using safe YAML, and are read back with a safe loader, so a results file can never execute code when it is loaded. Only this dictionary format is supported; a file containing anything else, such as the `!!python/object` tags emitted by very old versions, fails to load.
 
 ## Automatic Checking
 

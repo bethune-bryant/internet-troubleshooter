@@ -6,31 +6,10 @@ import pytest
 import yaml
 
 from internet_troubleshooter.ping_test import PingResult
-from internet_troubleshooter.result import LegacyResultLoader
 from internet_troubleshooter.result import TestResult as InternetTestResult
 from internet_troubleshooter.result import trace_name
 from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.trace_test import TraceResult
-
-LEGACY_YAML = """---
-!!python/object:internet_troubleshooter.result.TestResult
-pingResult: !!python/object:internet_troubleshooter.ping_test.PingResult
-  ip: 8.8.8.8
-  packetLoss: 1.5
-speedResult: !!python/object:internet_troubleshooter.speed_test.SpeedResult
-  download: 58.542856
-  latency: 19.266
-  result: '{"isp": "MyISP", "interface": {"macAddr": "AA:AA:AA:AA:AA:AA"}}'
-  upload: 17.1212
-timeStamp: 1700000000.0
-traceResult: !!python/object:internet_troubleshooter.trace_test.TraceResult
-  pingResults:
-  - !!python/object:internet_troubleshooter.ping_test.PingResult
-    ip: 10.0.0.1
-    packetLoss: 0.0
-  - null
-...
-"""
 
 
 def make_result(timeStamp, packetLoss=None):
@@ -192,18 +171,6 @@ def test_load_results_skips_empty_documents(tmp_path):
     assert InternetTestResult.load_results(str(yaml_file)) == []
 
 
-def test_load_legacy_results(tmp_path, caplog):
-    yaml_file = tmp_path / "legacy.yaml"
-    yaml_file.write_text(LEGACY_YAML, encoding="utf-8")
-
-    with caplog.at_level(logging.WARNING):
-        loaded = InternetTestResult.load_results(str(yaml_file))
-    assert loaded == [make_full_result()]
-
-    assert [record.levelno for record in caplog.records] == [logging.WARNING]
-    assert "legacy" in caplog.text
-
-
 def test_load_current_results_logs_no_warning(tmp_path, caplog):
     yaml_file = tmp_path / "results.yaml"
     yaml_file.write_text(
@@ -216,18 +183,11 @@ def test_load_current_results_logs_no_warning(tmp_path, caplog):
     assert caplog.records == []
 
 
-def test_load_legacy_results_drops_raw_speedtest_json(tmp_path):
-    yaml_file = tmp_path / "legacy.yaml"
-    yaml_file.write_text(LEGACY_YAML, encoding="utf-8")
-
-    loaded = InternetTestResult.load_results(str(yaml_file))
-    assert not hasattr(loaded[0].speedResult, "result")
-    assert "MyISP" not in loaded[0].to_yaml()
-
-
-def test_legacy_loader_rejects_arbitrary_python_tags():
+def test_load_yaml_rejects_python_object_tags():
     with pytest.raises(yaml.YAMLError):
-        yaml.load(
-            '!!python/object/apply:os.system ["echo unsafe"]',
-            Loader=LegacyResultLoader,
-        )
+        InternetTestResult.load_yaml('!!python/object/apply:os.system ["echo unsafe"]')
+
+
+def test_load_yaml_rejects_malformed_yaml():
+    with pytest.raises(yaml.YAMLError):
+        InternetTestResult.load_yaml("pingResult: [unclosed")
