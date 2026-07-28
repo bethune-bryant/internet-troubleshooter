@@ -1,33 +1,56 @@
 import json
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from internet_troubleshooter.utils import run_command, summarize
 
 SPEEDTEST_TIMEOUT = 300
 SPEEDTEST_HELP_TIMEOUT = 10
 
+# The speedtest CLI reports bandwidth in bytes per second; Mbps is
+# bytes/sec * 8 / 1e6, which is the same as dividing by 125,000.
+BYTES_PER_SEC_TO_MBPS = 125_000
+
+# Pads the labels in the human readable summary so the values line up.
+LABEL_WIDTH = 13
+
 
 @dataclass
 class SpeedResult:
-    upload: float = field()
-    download: float = field()
-    latency: float = field()
+    upload: float
+    download: float
+    latency: float
 
     def __init__(self, results=None, upload=None, download=None, latency=None):
         """Build from raw speedtest JSON, or directly from parsed values.
 
         The raw JSON is deliberately not retained: it contains the MAC address,
         local and external IPs, and ISP of the machine running the test.
+
+        Raises ValueError when results is not usable speedtest JSON.
         """
         if results is not None:
-            parsed_result = json.loads(results)
-            upload = float(parsed_result["upload"]["bandwidth"]) / 125000
-            download = float(parsed_result["download"]["bandwidth"]) / 125000
-            latency = float(parsed_result["ping"]["latency"])
+            upload, download, latency = SpeedResult.parse_result(results)
 
         self.upload = upload
         self.download = download
         self.latency = latency
+
+    @staticmethod
+    def parse_result(results):
+        """Return (upload, download, latency) from raw speedtest JSON."""
+        try:
+            parsed_result = json.loads(results)
+            return (
+                float(parsed_result["upload"]["bandwidth"]) / BYTES_PER_SEC_TO_MBPS,
+                float(parsed_result["download"]["bandwidth"]) / BYTES_PER_SEC_TO_MBPS,
+                float(parsed_result["ping"]["latency"]),
+            )
+        except (ValueError, KeyError, TypeError) as error:
+            print(
+                "ERROR: Unable to parse speedtest output: {}".format(error),
+                file=sys.stderr,
+            )
+            raise ValueError("Malformed speedtest JSON output.") from error
 
     def to_dict(self):
         return {
@@ -45,14 +68,12 @@ class SpeedResult:
         )
 
     def __str__(self):
-        return (
-            "Download:    {:.2f}Mbps\n"
-            "Upload:      {:.2f}Mbps\n"
-            "Latency:     {:.2f}ms"
-        ).format(
-            self.download,
-            self.upload,
-            self.latency,
+        return "\n".join(
+            [
+                "{:<{}}{:.2f}Mbps".format("Download:", LABEL_WIDTH, self.download),
+                "{:<{}}{:.2f}Mbps".format("Upload:", LABEL_WIDTH, self.upload),
+                "{:<{}}{:.2f}ms".format("Latency:", LABEL_WIDTH, self.latency),
+            ]
         )
 
     @staticmethod
@@ -103,6 +124,9 @@ class SpeedResult:
     @staticmethod
     def run_test():
         results = SpeedResult.execute_test()
-        if results is not None:
+        if results is None:
+            return None
+        try:
             return SpeedResult(results)
-        return None
+        except ValueError:
+            return None

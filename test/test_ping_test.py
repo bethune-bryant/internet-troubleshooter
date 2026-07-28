@@ -110,15 +110,3 @@ def test_execute_test_root(mocker, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "WARNING" not in captured.err
-
-
-# def test_execute_test_failure(mocker):
-#     test_output = '''TEST STRING'''
-
-#     mocker.patch("os.geteuid", return_value=1000)
-#     mocker.patch('subprocess.run', return_value=CompletedProcess(None, returncode=1, stdout=test_output))
-
-#     with pytest.raises(SystemExit) as pytest_wrapped_e:
-#             x = PingResult.execute_test("8.8.8.8")
-#     assert pytest_wrapped_e.type == SystemExit
-#     assert pytest_wrapped_e.value.code == 2

@@ -6,35 +6,107 @@
 
 This is an internet performance tracking and troubleshooting utility which uses tools like `ping`, `traceroute`, and the [SpeedTest CLI](https://www.speedtest.net/apps/cli#ubuntu).
 
-## Getting Started
+A single run measures packet loss to a target address and download, upload, and latency figures from the Speedtest CLI. When packet loss is high, it also traceroutes to the target and measures packet loss to each intermediate hop, which helps show whether the problem is inside your network or upstream of it. Results can be appended to a YAML file and later summarized as text or as an interactive HTML plot.
 
-To get started you can setup a Python virtual environment and use pip to install the troubleshooter.
+## Prerequisites
+
+`checkinternet` shells out to system tools, which must be installed separately:
+
+| Requirement | Notes |
+| --- | --- |
+| Python 3.9 or newer | |
+| `ping` | Usually preinstalled. Part of `iputils-ping` on Debian/Ubuntu. |
+| `traceroute` | `sudo apt install traceroute`. Only needed when packet loss exceeds `--max_packet_loss`. |
+| Ookla `speedtest` CLI | See below. Only needed for speed tests. |
+
+If the `speedtest` CLI is missing, `checkinternet run` prints a warning and reports only packet loss; it does not fail. If `traceroute` is missing, the traceroute step reports an error and is skipped.
+
+Install the Ookla Speedtest CLI on Debian/Ubuntu with:
 
 ```shell
-# install speedtest-cli
 sudo apt-get install curl
 curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash
 sudo apt-get install speedtest
-# install python-venv and create venv
-sudo apt install python3.10-venv
+```
+
+## Install
+
+Install into a virtual environment:
+
+```shell
+sudo apt install python3-venv
 python3 -m venv ./my_env
 source ./my_env/bin/activate
-# install internet-troubleshooter
+```
+
+Then pick the install that matches what you need:
+
+```shell
+# core: run tests, log results, and display text summaries
 pip install git+https://github.com/bethune-bryant/internet-troubleshooter.git
-# run internet-troubleshooter
+
+# with HTML plots: adds plotly, required for `display --format html`
+pip install "git+https://github.com/bethune-bryant/internet-troubleshooter.git#egg=internet-troubleshooter[html]"
+```
+
+To work on the project itself, clone it and install the `dev` and `html` extras:
+
+```shell
+git clone https://github.com/bethune-bryant/internet-troubleshooter.git
+cd internet-troubleshooter
+pip install -e ".[dev,html]"
+```
+
+## Getting Started
+
+```shell
 checkinternet run
 ```
 
-> For a more accurate packet loss, run checkinternet as `root`.
+> For more accurate packet loss, run `checkinternet` as `root`. Only root may flood ping (`ping -f`), which is what makes it possible to measure loss over hundreds of packets in a few seconds. As a normal user the test falls back to a plain `ping` with a much smaller sample, and prints a warning to that effect.
+
+## Command Line Reference
+
+`--debug` is a global flag and must come *before* the subcommand:
+
+```shell
+checkinternet --debug run --yaml_file troubleshooting.yaml
+```
+
+| Flag | Applies to | Default | Description |
+| --- | --- | --- | --- |
+| `--debug` | global | off | Print progress and the raw output of each command to stderr. |
+| `--ping_ip` | `run` | `8.8.8.8` | IP address or hostname to test against. Must be a valid address or hostname. |
+| `--ping_count` | `run` | 400 as root, else 10 | Number of packets to send to the target. Must be at least 1. |
+| `--max_packet_loss` | `run` | `3.0` | Packet loss percent above which a traceroute is run. |
+| `--skip_speedtest` | `run` | off | Skip the Speedtest CLI test. |
+| `--skip_pingtest` | `run` | off | Skip the ping test. This also skips the traceroute, since the traceroute is triggered by the ping result. |
+| `--yaml_file` | `run` | none | Append this run's results to the given file. Without it, results are printed but not recorded. |
+| `--yaml_file` | `display` | required | File of logged results to read. |
+| `--format` | `display` | `human` | `human` for a text summary or `html` for an interactive plot. Both are written to stdout. |
+
+### How `--max_packet_loss` gates the traceroute
+
+The traceroute is diagnostic and is only run when something looks wrong. After the ping test, a traceroute runs if either the ping test failed outright or the measured packet loss is greater than `--max_packet_loss`. Set it to `0` to traceroute on any loss at all, or pass `--skip_pingtest` to never traceroute.
+
+Each intermediate hop found by the traceroute is then pinged as well. The target address itself is skipped, since the primary ping test already covers it, and repeated addresses are only pinged once — a single router commonly answers for several consecutive hops. Hops are pinged with a much smaller sample than the target (at most 3 packets) so that a long trace does not multiply the runtime of the whole check.
+
+## Exit Codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success. This includes runs where a test was skipped, such as when the `speedtest` CLI is not installed. |
+| 1 | `--ping_ip` is not a valid address or hostname; `--ping_count` is less than 1; the results file could not be written or read; or every test that was attempted failed. |
+| 2 | The command line itself could not be parsed, for example a missing subcommand or an unknown flag. |
 
 ## Tracking and Displaying Statistics
 
-The `checkinternet` script supports logging results to a yaml file and then displaying them to either the console or an html file.
+The `checkinternet` script supports logging results to a YAML file and then displaying them to either the console or an HTML file.
 
 ```shell
 $ checkinternet run --yaml_file troubleshooting.yaml
 ...
-$ checkinternet display --yaml_file /home/brnelson/troubleshooting.yaml
+$ checkinternet display --yaml_file troubleshooting.yaml
 Download:
   Mean: 57.97Mbps
   Variance: 6.69Mbps
@@ -48,10 +120,10 @@ Upload:
   Max: 17.72Mbps
 
 Latency:
-  Mean: 18.54Mbps
-  Variance: 4.38Mbps
-  Min: 15.73Mbps
-  Max: 24.19Mbps
+  Mean: 18.54ms
+  Variance: 4.38ms
+  Min: 15.73ms
+  Max: 24.19ms
 
 Packet Loss:
   Mean: 0.10%
@@ -61,7 +133,15 @@ Packet Loss:
 $ checkinternet display --yaml_file troubleshooting.yaml --format html > troubleshooting.html
 ```
 
+HTML output requires the `html` extra; without it `display --format html` fails with an error stating that plotly is not installed.
+
 ![HTML Plot](docs/DiplayHTML.PNG)
+
+### Result Log Format
+
+Each run appends one YAML document to the file, so the same file can be reused indefinitely. Results are written as plain dictionaries with `camelCase` keys using safe YAML, and are read back with a safe loader, so a results file can never execute code when it is loaded.
+
+Earlier versions serialized Python objects directly, producing `!!python/object` tags. Those files still load, and `display` prints a warning when it reads one. To migrate a legacy file, display it once and write the results out again with a current version.
 
 ## Automatic Checking
 
@@ -73,4 +153,13 @@ crontab -e
 
 ```bash
 0 0-7 * * * source /home/USER/git/internet-troubleshooter/my_env/bin/activate && checkinternet --debug run --yaml_file /home/USER/troubleshooting.yaml >> /home/USER/troubleshooting.log 2>&1
+```
+
+## Development
+
+```shell
+pip install -e ".[dev,html]"
+black --check .
+flake8 . --max-complexity=10
+pytest --cov=internet_troubleshooter
 ```

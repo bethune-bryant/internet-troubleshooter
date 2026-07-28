@@ -1,4 +1,7 @@
 from subprocess import CompletedProcess
+
+import pytest
+
 from internet_troubleshooter.speed_test import SpeedResult
 
 test_json = """
@@ -62,9 +65,9 @@ test_json = """
 
 def test_SpeedResult():
     x = SpeedResult(results=test_json)
-    assert x.download == 58.542856
-    assert x.upload == 17.1212
-    assert x.latency == 19.266
+    assert x.download == pytest.approx(58.542856)
+    assert x.upload == pytest.approx(17.1212)
+    assert x.latency == pytest.approx(19.266)
     x_str = str(x)
     assert (
         x_str
@@ -86,15 +89,51 @@ def test_SpeedResult_does_not_retain_raw_json():
 def test_SpeedResult_to_dict_omits_raw_json():
     x = SpeedResult(results=test_json)
     assert x.to_dict() == {
-        "upload": 17.1212,
-        "download": 58.542856,
-        "latency": 19.266,
+        "upload": pytest.approx(17.1212),
+        "download": pytest.approx(58.542856),
+        "latency": pytest.approx(19.266),
     }
 
 
 def test_SpeedResult_from_dict_round_trip():
     x = SpeedResult(results=test_json)
     assert SpeedResult.from_dict(x.to_dict()) == x
+
+
+@pytest.mark.parametrize(
+    "bad_results",
+    [
+        "not json at all",
+        "",
+        "[]",
+        '{"ping": {"latency": 1.0}}',
+        '{"upload": {"bandwidth": 1}, "download": {"bandwidth": 1}, "ping": {}}',
+        '{"upload": {"bandwidth": "fast"}, "download": {"bandwidth": 1},'
+        ' "ping": {"latency": 1.0}}',
+        '{"upload": {"bandwidth": {}}, "download": {"bandwidth": 1},'
+        ' "ping": {"latency": 1.0}}',
+    ],
+)
+def test_SpeedResult_rejects_bad_json(bad_results, capsys):
+    with pytest.raises(ValueError):
+        SpeedResult(results=bad_results)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR: Unable to parse speedtest output" in captured.err
+
+
+def test_run_test_returns_none_on_bad_json(mocker, capsys):
+    mocker.patch(
+        "internet_troubleshooter.speed_test.SpeedResult.execute_test",
+        return_value="not json at all",
+    )
+
+    assert SpeedResult.run_test() is None
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR: Unable to parse speedtest output" in captured.err
 
 
 def test_summarize_units():
