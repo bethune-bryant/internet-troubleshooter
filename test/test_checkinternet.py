@@ -138,9 +138,12 @@ def test_run_debug_logging_with_trace_and_yaml(mocker, tmp_path, capsys):
         return_value=None,
     )
 
-    assert checkinternet.run(
-        make_args(debug=True, yaml_file=str(yaml_file), skip_speedtest=True)
-    ) == 1
+    assert (
+        checkinternet.run(
+            make_args(debug=True, yaml_file=str(yaml_file), skip_speedtest=True)
+        )
+        == 1
+    )
 
     captured = capsys.readouterr()
     assert captured.out == ""
