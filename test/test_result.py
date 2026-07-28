@@ -1,4 +1,5 @@
 import io
+import logging
 from time import sleep
 
 import pytest
@@ -191,24 +192,35 @@ def test_load_results_skips_empty_documents(tmp_path):
     assert InternetTestResult.load_results(str(yaml_file)) == []
 
 
-def test_load_legacy_results(tmp_path, capsys):
+def test_load_legacy_results(tmp_path, caplog):
     yaml_file = tmp_path / "legacy.yaml"
     yaml_file.write_text(LEGACY_YAML, encoding="utf-8")
 
-    loaded = InternetTestResult.load_results(str(yaml_file))
+    with caplog.at_level(logging.WARNING):
+        loaded = InternetTestResult.load_results(str(yaml_file))
     assert loaded == [make_full_result()]
 
-    captured = capsys.readouterr()
-    assert "WARNING:" in captured.err
-    assert "legacy" in captured.err
+    assert [record.levelno for record in caplog.records] == [logging.WARNING]
+    assert "legacy" in caplog.text
 
 
-def test_load_legacy_results_drops_raw_speedtest_json(tmp_path, capsys):
+def test_load_current_results_logs_no_warning(tmp_path, caplog):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(
+        "---\n{}\n...\n".format(make_full_result().to_yaml()), encoding="utf-8"
+    )
+
+    with caplog.at_level(logging.WARNING):
+        InternetTestResult.load_results(str(yaml_file))
+
+    assert caplog.records == []
+
+
+def test_load_legacy_results_drops_raw_speedtest_json(tmp_path):
     yaml_file = tmp_path / "legacy.yaml"
     yaml_file.write_text(LEGACY_YAML, encoding="utf-8")
 
     loaded = InternetTestResult.load_results(str(yaml_file))
-    capsys.readouterr()
     assert not hasattr(loaded[0].speedResult, "result")
     assert "MyISP" not in loaded[0].to_yaml()
 

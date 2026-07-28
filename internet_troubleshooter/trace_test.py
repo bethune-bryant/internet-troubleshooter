@@ -1,3 +1,4 @@
+import logging
 import re
 import sys
 from dataclasses import dataclass
@@ -5,6 +6,8 @@ from typing import List
 
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.utils import run_command
+
+logger = logging.getLogger(__name__)
 
 OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
 IPV4 = r"{0}(?:\.{0}){{3}}".format(OCTET)
@@ -76,7 +79,7 @@ class TraceResult:
         return trace_result.stdout
 
     @staticmethod
-    def hop_ips(trace_output, target_ip, debug=False):
+    def hop_ips(trace_output, target_ip):
         """Addresses of the intermediate hops in a traceroute.
 
         A single router often answers for several hops, so addresses are
@@ -86,26 +89,23 @@ class TraceResult:
         hops = list()
         for line in trace_output.splitlines():
             trace_ip = parse_trace_line(line)
-            if debug:
-                print("trace_ip: ", trace_ip, file=sys.stderr)
+            logger.debug("trace_ip: %s", trace_ip)
             if trace_ip is None or trace_ip == target_ip or trace_ip in hops:
                 continue
             hops.append(trace_ip)
         return hops
 
     @staticmethod
-    def run_test(ip, count=None, debug=False):
-        if debug:
-            print("Running Traceroute", file=sys.stderr)
+    def run_test(ip, count=None):
+        logger.debug("Running Traceroute")
         results = TraceResult.execute_test(ip)
-        if debug:
-            print("Traceroute: ", results, file=sys.stderr)
+        logger.debug("Traceroute: %s", results)
         if results is None:
             return None
 
         hop_count = hop_ping_count(count)
         trace_ping_results = list()
-        for trace_ip in TraceResult.hop_ips(results, ip, debug):
+        for trace_ip in TraceResult.hop_ips(results, ip):
             trace_ping_result = PingResult.run_test(trace_ip, hop_count)
             if trace_ping_result is not None:
                 trace_ping_results.append(trace_ping_result)

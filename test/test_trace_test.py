@@ -1,3 +1,4 @@
+import logging
 from subprocess import CompletedProcess
 
 import pytest
@@ -148,7 +149,7 @@ def test_hop_ips_preserves_first_seen_order():
     ]
 
 
-def test_hop_ips_debug_logging(capsys):
+def test_hop_ips_debug_logging(capsys, caplog):
     trace_output = "\n".join(
         [
             " 1  10.0.0.1  0.1 ms",
@@ -156,15 +157,24 @@ def test_hop_ips_debug_logging(capsys):
         ]
     )
 
-    assert TraceResult.hop_ips(trace_output, "8.8.8.8", debug=True) == ["10.0.0.1"]
+    with caplog.at_level(logging.DEBUG):
+        assert TraceResult.hop_ips(trace_output, "8.8.8.8") == ["10.0.0.1"]
 
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "trace_ip:  10.0.0.1" in captured.err
-    assert "trace_ip:  8.8.8.8" in captured.err
+    assert capsys.readouterr().err == ""
+    assert "trace_ip: 10.0.0.1" in caplog.text
+    assert "trace_ip: 8.8.8.8" in caplog.text
 
 
-def test_run_test_debug_logging(mocker, capsys):
+def test_hop_ips_quiet_without_debug_level(caplog):
+    trace_output = " 1  10.0.0.1  0.1 ms"
+
+    with caplog.at_level(logging.INFO):
+        assert TraceResult.hop_ips(trace_output, "8.8.8.8") == ["10.0.0.1"]
+
+    assert caplog.records == []
+
+
+def test_run_test_debug_logging(mocker, capsys, caplog):
     trace_output = " 1  192.168.1.1  0.310 ms\n 2  8.8.8.8  9.310 ms"
     mocker.patch(
         "internet_troubleshooter.trace_test.TraceResult.execute_test",
@@ -175,14 +185,13 @@ def test_run_test_debug_logging(mocker, capsys):
         return_value=PingResult(ip="192.168.1.1", packetLoss=0.0),
     )
 
-    TraceResult.run_test("8.8.8.8", debug=True)
+    with caplog.at_level(logging.DEBUG):
+        TraceResult.run_test("8.8.8.8")
 
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "Running Traceroute" in captured.err
-    assert "Traceroute: " in captured.err
-    assert trace_output in captured.err
-    assert "trace_ip:  192.168.1.1" in captured.err
+    assert capsys.readouterr().err == ""
+    assert "Running Traceroute" in caplog.text
+    assert "Traceroute: {}".format(trace_output) in caplog.text
+    assert "trace_ip: 192.168.1.1" in caplog.text
 
 
 @pytest.mark.parametrize(

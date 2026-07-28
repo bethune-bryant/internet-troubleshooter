@@ -1,3 +1,4 @@
+import logging
 from argparse import Namespace
 
 import pytest
@@ -103,7 +104,7 @@ def test_run_succeeds_when_ping_works(mocker, capsys):
     assert "Packet Loss: 0.00%" in capsys.readouterr().out
 
 
-def test_run_debug_logging_ping_only(mocker, capsys):
+def test_run_debug_logging_ping_only(mocker, capsys, caplog):
     ping_result = PingResult(ip="8.8.8.8", packetLoss=0.0)
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
@@ -114,20 +115,19 @@ def test_run_debug_logging_ping_only(mocker, capsys):
         return_value=None,
     )
 
-    assert checkinternet.run(make_args(debug=True)) == 0
+    with caplog.at_level(logging.DEBUG):
+        assert checkinternet.run(make_args()) == 0
     assert not trace.called
 
-    captured = capsys.readouterr()
-    assert "Packet Loss: 0.00%" in captured.out
-    assert "Running Tests" in captured.err
-    assert "Running PingTest" in captured.err
-    assert "Ping Result: " in captured.err
-    assert str(ping_result) in captured.err
-    assert "Running TraceTest" not in captured.err
-    assert "Running SpeedTest" not in captured.err
+    assert "Packet Loss: 0.00%" in capsys.readouterr().out
+    assert "Running Tests" in caplog.text
+    assert "Running PingTest" in caplog.text
+    assert "Ping Result: {}".format(ping_result) in caplog.text
+    assert "Running TraceTest" not in caplog.text
+    assert "Running SpeedTest" not in caplog.text
 
 
-def test_run_debug_logging_with_trace_and_yaml(mocker, tmp_path, capsys):
+def test_run_debug_logging_with_trace_and_yaml(mocker, tmp_path, capsys, caplog):
     yaml_file = tmp_path / "results.yaml"
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
@@ -138,21 +138,18 @@ def test_run_debug_logging_with_trace_and_yaml(mocker, tmp_path, capsys):
         return_value=None,
     )
 
-    assert (
-        checkinternet.run(
-            make_args(debug=True, yaml_file=str(yaml_file), skip_speedtest=True)
+    with caplog.at_level(logging.DEBUG):
+        assert (
+            checkinternet.run(make_args(yaml_file=str(yaml_file), skip_speedtest=True))
+            == 1
         )
-        == 1
-    )
 
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "Running TraceTest" in captured.err
-    assert "Logging results to: " in captured.err
-    assert str(yaml_file) in captured.err
+    assert capsys.readouterr().out == ""
+    assert "Running TraceTest" in caplog.text
+    assert "Logging results to: {}".format(yaml_file) in caplog.text
 
 
-def test_run_debug_logging_with_speedtest(mocker, capsys):
+def test_run_debug_logging_with_speedtest(mocker, capsys, caplog):
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
         return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
@@ -166,28 +163,67 @@ def test_run_debug_logging_with_speedtest(mocker, capsys):
         return_value=SpeedResult(upload=1.0, download=2.0, latency=3.0),
     )
 
-    assert checkinternet.run(make_args(debug=True, skip_speedtest=False)) == 0
+    with caplog.at_level(logging.DEBUG):
+        assert checkinternet.run(make_args(skip_speedtest=False)) == 0
 
     captured = capsys.readouterr()
     assert "Packet Loss: 0.00%" in captured.out
     assert "Download:" in captured.out
-    assert "Running SpeedTest" in captured.err
+    assert "Running SpeedTest" in caplog.text
 
 
-def test_main_debug_logs_parsed_args(mocker, capsys):
+def test_run_debug_logging_records_only_debug_level(mocker, capsys, caplog):
+    mocker.patch(
+        "internet_troubleshooter.checkinternet.PingResult.run_test",
+        return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        assert checkinternet.run(make_args()) == 0
+
+    capsys.readouterr()
+    assert caplog.records
+    assert all(record.levelno == logging.DEBUG for record in caplog.records)
+
+
+def test_main_configures_logging_from_debug_flag(mocker):
     mocker.patch("sys.argv", ["checkinternet", "--debug", "run", "--skip_pingtest"])
+    configure = mocker.patch("internet_troubleshooter.checkinternet.configure_logging")
+    mocker.patch("internet_troubleshooter.checkinternet.run", return_value=0)
+
+    with pytest.raises(SystemExit):
+        checkinternet.main()
+
+    assert configure.call_args.args == (True,)
+
+
+def test_main_configures_logging_without_debug_flag(mocker):
+    mocker.patch("sys.argv", ["checkinternet", "run", "--skip_pingtest"])
+    configure = mocker.patch("internet_troubleshooter.checkinternet.configure_logging")
+    mocker.patch("internet_troubleshooter.checkinternet.run", return_value=0)
+
+    with pytest.raises(SystemExit):
+        checkinternet.main()
+
+    assert configure.call_args.args == (False,)
+
+
+def test_main_debug_logs_parsed_args(mocker, capsys, caplog):
+    mocker.patch("sys.argv", ["checkinternet", "--debug", "run", "--skip_pingtest"])
+    mocker.patch("internet_troubleshooter.checkinternet.configure_logging")
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
         return_value=None,
     )
 
-    with pytest.raises(SystemExit) as excinfo:
-        checkinternet.main()
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(SystemExit) as excinfo:
+            checkinternet.main()
     assert excinfo.value.code == 0
 
-    captured = capsys.readouterr()
-    assert "Parsed Args: " in captured.err
-    assert "skip_pingtest=True" in captured.err
+    capsys.readouterr()
+    assert "Parsed Args: " in caplog.text
+    assert "skip_pingtest=True" in caplog.text
 
 
 def test_run_fails_when_every_test_fails(mocker, capsys):
