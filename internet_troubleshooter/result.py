@@ -4,11 +4,18 @@ from datetime import datetime
 from dataclasses import dataclass, field
 import yaml
 from yaml.loader import UnsafeLoader
-from statistics import mean
 
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult
 from internet_troubleshooter.speed_test import SpeedResult
+from internet_troubleshooter.utils import safe_mean
+
+
+def trace_name(label, values):
+    average = safe_mean(values)
+    if average is None:
+        return label
+    return "{} (avg: {:.2f})".format(label, average)
 
 
 @dataclass
@@ -16,7 +23,7 @@ class TestResult:
     pingResult: PingResult = field()
     traceResult: TraceResult = field()
     speedResult: SpeedResult = field()
-    timeStamp: float = time()
+    timeStamp: float = field(default_factory=time)
 
     def human_readable(self, io_target=sys.stdout):
         if self.pingResult is not None:
@@ -27,6 +34,8 @@ class TestResult:
 
         if self.traceResult is not None:
             for trace_result in self.traceResult.pingResults:
+                if trace_result is None:
+                    continue
                 print(
                     "{:.2f}% {}".format(trace_result.packetLoss, trace_result.ip),
                     file=io_target,
@@ -41,6 +50,7 @@ class TestResult:
     def to_yaml(self):
         return yaml.dump(self)
 
+    @staticmethod
     def load_results(yaml_filename):
         with open(yaml_filename) as f:
             return yaml.load_all(f.read(), Loader=UnsafeLoader)
@@ -48,6 +58,7 @@ class TestResult:
     def get_date(self):
         return datetime.fromtimestamp(self.timeStamp)
 
+    @staticmethod
     def to_human(results, io_target=sys.stdout):
         speedResults = [result.speedResult for result in results]
         pingResults = [result.pingResult for result in results]
@@ -58,6 +69,7 @@ class TestResult:
             file=io_target,
         )
 
+    @staticmethod
     def to_html(results, io_target=sys.stdout):
         try:
             from plotly import graph_objs as go
@@ -69,7 +81,7 @@ class TestResult:
                 "or 'pip install plotly'."
             ) from e
 
-        results.sort(key=lambda x: x.timeStamp)
+        results = sorted(results, key=lambda x: x.timeStamp)
 
         xs = [result.get_date() for result in results if result.speedResult is not None]
 
@@ -86,9 +98,7 @@ class TestResult:
             if result.speedResult is not None
         ]
         fig.add_trace(
-            go.Scatter(
-                x=xs, y=download, name="Download (avg: {:.2f})".format(mean(download))
-            ),
+            go.Scatter(x=xs, y=download, name=trace_name("Download", download)),
             secondary_y=False,
             row=1,
             col=1,
@@ -109,9 +119,7 @@ class TestResult:
             if result.speedResult is not None
         ]
         fig.add_trace(
-            go.Scatter(
-                x=xs, y=upload, name="Upload (avg: {:.2f})".format(mean(upload))
-            ),
+            go.Scatter(x=xs, y=upload, name=trace_name("Upload", upload)),
             secondary_y=False,
             row=1,
             col=1,
@@ -132,9 +140,7 @@ class TestResult:
             if result.speedResult is not None
         ]
         fig.add_trace(
-            go.Scatter(
-                x=xs, y=latency, name="Latency (avg: {:.2f})".format(mean(latency))
-            ),
+            go.Scatter(x=xs, y=latency, name=trace_name("Latency", latency)),
             secondary_y=True,
             row=1,
             col=1,
@@ -163,7 +169,7 @@ class TestResult:
             go.Scatter(
                 x=xs,
                 y=packetLoss,
-                name="Packet Loss (avg: {:.2f})".format(mean(packetLoss)),
+                name=trace_name("Packet Loss", packetLoss),
             ),
             row=2,
             col=1,

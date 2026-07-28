@@ -1,11 +1,12 @@
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass, field
-from internet_troubleshooter.utils import summarize
+from internet_troubleshooter.utils import run_command, summarize
 
 PACKET_LOSS_REGEX = re.compile(r"([\d.]+)%\s+packet\s+loss")
+
+PING_TIMEOUT = 120
 
 
 @dataclass
@@ -16,16 +17,19 @@ class PingResult:
     def __str__(self):
         return "{:.2f}%: {}".format(self.packetLoss, self.ip)
 
+    @staticmethod
     def parse_result(ip, result):
         packet_loss_match = PACKET_LOSS_REGEX.search(result)
         if packet_loss_match is None:
             return None
         return PingResult(ip=ip, packetLoss=float(packet_loss_match.group(1)))
 
+    @staticmethod
     def summarize(results):
         packetLoss = [result.packetLoss for result in results if result is not None]
         return "{}".format(summarize(packetLoss, "Packet Loss", "%"))
 
+    @staticmethod
     def execute_test(ip, count=None):
         uid = os.geteuid()
 
@@ -33,25 +37,28 @@ class PingResult:
             count = 400 if uid == 0 else 10
 
         if uid == 0:
-            ping_result = subprocess.run(
-                ["ping", "-f", "-q", "-c", str(count), ip],
-                capture_output=True,
-                text=True,
-            )
+            command = ["ping", "-f", "-q", "-c", str(count), ip]
         else:
             print(
                 "WARNING: Script not run as root, unable to flood ping.",
                 "Packet loss may not be accurate.",
                 file=sys.stderr,
             )
-            ping_result = subprocess.run(
-                ["ping", "-q", "-c", str(count), ip], capture_output=True, text=True
-            )
+            command = ["ping", "-q", "-c", str(count), ip]
+
+        ping_result = run_command(command, timeout=PING_TIMEOUT)
+
+        if ping_result is None:
+            return None
 
         return ping_result.stdout
 
+    @staticmethod
     def run_test(ip, count=None):
         output = PingResult.execute_test(ip, count)
+        if output is None:
+            return None
+
         result = PingResult.parse_result(ip, output)
         if result is None:
             print(

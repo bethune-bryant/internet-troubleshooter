@@ -47,7 +47,10 @@ def run(args):
         test_result.pingResult = PingResult.run_test(args.ping_ip, args.ping_count)
         debug(args.debug, "Ping Result: ", test_result.pingResult)
 
-        if test_result.pingResult.packetLoss > args.max_packet_loss:
+        if (
+            test_result.pingResult is None
+            or test_result.pingResult.packetLoss > args.max_packet_loss
+        ):
             debug(args.debug, "Running TraceTest")
             test_result.traceResult = TraceResult.run_test(
                 args.ping_ip, args.ping_count, args.debug
