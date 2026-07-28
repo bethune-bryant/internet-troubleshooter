@@ -1,3 +1,4 @@
+import logging
 import sys
 from time import time
 from datetime import datetime
@@ -8,6 +9,8 @@ from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult
 from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.utils import safe_mean
+
+logger = logging.getLogger(__name__)
 
 # Results written before safe serialization was introduced were dumped with
 # `yaml.dump(self)`, which tags every object with its Python class.
@@ -119,10 +122,9 @@ class TestResult:
     def load_yaml(content):
         """Parse the contents of a results file into TestResult objects."""
         if LEGACY_TAG in content:
-            print(
-                "WARNING: Reading results written in the legacy Python-object "
-                "format. Rewrite the file to migrate it to the current format.",
-                file=sys.stderr,
+            logger.warning(
+                "Reading results written in the legacy Python-object format. "
+                "Rewrite the file to migrate it to the current format."
             )
             documents = yaml.load_all(content, Loader=LegacyResultLoader)
         else:

@@ -1,10 +1,13 @@
 import ipaddress
+import logging
 import re
 import subprocess
 import sys
 from statistics import mean, variance
 
 DEFAULT_TIMEOUT = 120
+
+LOG_FORMAT = "%(levelname)s: %(message)s"
 
 MAX_HOSTNAME_LENGTH = 253
 HOSTNAME_LABEL_REGEX = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
@@ -33,9 +36,13 @@ def is_valid_host(value):
     )
 
 
-def debug(debug, *args, **kwargs):
-    if debug:
-        print(*args, **kwargs, file=sys.stderr)
+def configure_logging(debug=False):
+    """Send log records to stderr, including DEBUG level ones when debug is set."""
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.WARNING,
+        format=LOG_FORMAT,
+        stream=sys.stderr,
+    )
 
 
 def run_command(command, timeout=DEFAULT_TIMEOUT):

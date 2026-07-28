@@ -1,10 +1,14 @@
+import logging
 import subprocess
+import sys
+from contextlib import contextmanager
 from subprocess import CompletedProcess
 
 import pytest
 
 from internet_troubleshooter.utils import (
-    debug,
+    LOG_FORMAT,
+    configure_logging,
     is_valid_host,
     run_command,
     safe_mean,
@@ -12,32 +16,69 @@ from internet_troubleshooter.utils import (
 )
 
 
-def test_debug_disabled(capsys):
-    debug(False, "TEST1")
+@contextmanager
+def unconfigured_root_logger():
+    """Strip the root logger, so that basicConfig() is not treated as a no-op.
+
+    pytest installs its own capture handlers, which would otherwise make
+    configure_logging() do nothing at all.
+    """
+    root = logging.getLogger()
+    handlers = root.handlers
+    level = root.level
+    root.handlers = []
+    try:
+        yield root
+    finally:
+        for handler in root.handlers:
+            handler.close()
+        root.handlers = handlers
+        root.setLevel(level)
+
+
+@pytest.mark.parametrize(
+    "debug, expected_level",
+    [(True, logging.DEBUG), (False, logging.WARNING)],
+)
+def test_configure_logging_level(mocker, debug, expected_level):
+    basic_config = mocker.patch("logging.basicConfig")
+
+    configure_logging(debug)
+
+    assert basic_config.call_args.kwargs["level"] == expected_level
+    assert basic_config.call_args.kwargs["format"] == LOG_FORMAT
+    assert basic_config.call_args.kwargs["stream"] is sys.stderr
+
+
+def test_configure_logging_defaults_to_warning(mocker):
+    basic_config = mocker.patch("logging.basicConfig")
+
+    configure_logging()
+
+    assert basic_config.call_args.kwargs["level"] == logging.WARNING
+
+
+def test_configure_logging_debug_writes_to_stderr(capsys):
+    with unconfigured_root_logger():
+        configure_logging(True)
+        logging.getLogger("test.configure_logging").debug("TEST %s", "MESSAGE")
+
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == ""
+    assert "DEBUG: TEST MESSAGE" in captured.err
 
 
-def test_debug_writes_to_stderr(capsys):
-    debug(True, "TEST2")
+def test_configure_logging_hides_debug_by_default(capsys):
+    with unconfigured_root_logger():
+        configure_logging()
+        logger = logging.getLogger("test.configure_logging")
+        logger.debug("HIDDEN")
+        logger.warning("SHOWN")
+
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert captured.err == "TEST2\n"
-
-
-def test_debug_multiple_args(capsys):
-    debug(True, "Ping Result: ", "10.00%: 8.8.8.8")
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == "Ping Result:  10.00%: 8.8.8.8\n"
-
-
-def test_debug_kwargs(capsys):
-    debug(True, "line1", "line2", sep="|", end="")
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == "line1|line2"
+    assert "HIDDEN" not in captured.err
+    assert "WARNING: SHOWN" in captured.err
 
 
 def test_summarize():
