@@ -7,7 +7,7 @@ from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult
 from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.result import TestResult
-from internet_troubleshooter.utils import debug
+from internet_troubleshooter.utils import debug, is_valid_host
 
 
 def cli_input():
@@ -39,13 +39,29 @@ def cli_input():
 
 def run(args):
     debug(args.debug, str(datetime.now()))
+
+    if not is_valid_host(args.ping_ip):
+        print(
+            "ERROR: Invalid --ping_ip value '{}', "
+            "expected an IP address or hostname.".format(args.ping_ip),
+            file=sys.stderr,
+        )
+        return 1
+
     debug(args.debug, "Running Tests")
     test_result = TestResult(pingResult=None, traceResult=None, speedResult=None)
 
+    attempted = 0
+    succeeded = 0
+
     if not args.skip_pingtest:
         debug(args.debug, "Running PingTest")
+        attempted += 1
         test_result.pingResult = PingResult.run_test(args.ping_ip, args.ping_count)
         debug(args.debug, "Ping Result: ", test_result.pingResult)
+
+        if test_result.pingResult is not None:
+            succeeded += 1
 
         if (
             test_result.pingResult is None
@@ -57,34 +73,61 @@ def run(args):
             )
 
     if not args.skip_speedtest:
+        # A missing speedtest CLI is reported by check() and treated as a
+        # skipped test rather than a failed one.
         if SpeedResult.check():
             debug(args.debug, "Running SpeedTest")
+            attempted += 1
             test_result.speedResult = SpeedResult.run_test()
+            if test_result.speedResult is not None:
+                succeeded += 1
 
     test_result.human_readable(sys.stdout)
 
     if args.yaml_file is not None:
         debug(args.debug, "Logging results to: ", args.yaml_file)
-        print(
-            "---\n{}\n...\n".format(test_result.to_yaml()),
-            file=open(args.yaml_file, "a"),
-        )
+        try:
+            with open(args.yaml_file, "a", encoding="utf-8") as yaml_file:
+                print("---\n{}\n...\n".format(test_result.to_yaml()), file=yaml_file)
+        except OSError as error:
+            print(
+                "ERROR: Unable to write results to '{}': {}".format(
+                    args.yaml_file, error
+                ),
+                file=sys.stderr,
+            )
+            return 1
+
+    if attempted > 0 and succeeded == 0:
+        print("ERROR: All requested tests failed.", file=sys.stderr)
+        return 1
+
+    return 0
 
 
 def display(args):
-    results = list(TestResult.load_results(args.yaml_file))
+    try:
+        results = TestResult.load_results(args.yaml_file)
+    except OSError as error:
+        print(
+            "ERROR: Unable to read results from '{}': {}".format(args.yaml_file, error),
+            file=sys.stderr,
+        )
+        return 1
+
     if args.format == "html":
-        TestResult.to_html(results)
+        TestResult.to_html(results, sys.stdout)
     else:
-        TestResult.to_human(results)
+        TestResult.to_human(results, sys.stdout)
+
+    return 0
 
 
 def main():
     args = cli_input()
-    if args.debug:
-        debug(args.debug, "Parsed Args: ", args)
+    debug(args.debug, "Parsed Args: ", args)
 
-    args.func(args)
+    sys.exit(args.func(args))
 
 
 if __name__ == "__main__":

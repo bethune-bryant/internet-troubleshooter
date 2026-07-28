@@ -1,7 +1,15 @@
 import subprocess
 from subprocess import CompletedProcess
 
-from internet_troubleshooter.utils import debug, run_command, safe_mean, summarize
+import pytest
+
+from internet_troubleshooter.utils import (
+    debug,
+    is_valid_host,
+    run_command,
+    safe_mean,
+    summarize,
+)
 
 
 def test_debug(capsys):
@@ -33,6 +41,43 @@ def test_summarize_error():
 def test_safe_mean():
     assert safe_mean([1.0, 2.0, 3.0]) == 2.0
     assert safe_mean([]) is None
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "8.8.8.8",
+        "127.0.0.1",
+        "2001:4860:4860::8888",
+        "::1",
+        "example.com",
+        "my-router.local",
+        "example.com.",
+        "a",
+    ],
+)
+def test_is_valid_host_accepts(host):
+    assert is_valid_host(host)
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "-f",
+        "--flood",
+        "-8.8.8.8",
+        "8.8.8.8 -f",
+        "8.8.8.8;rm -rf /",
+        "example..com",
+        "example-.com",
+        "",
+        None,
+        "a" * 254,
+        ".",
+    ],
+)
+def test_is_valid_host_rejects(host):
+    assert not is_valid_host(host)
 
 
 def test_run_command(mocker, capsys):

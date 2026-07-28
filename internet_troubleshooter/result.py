@@ -3,12 +3,38 @@ from time import time
 from datetime import datetime
 from dataclasses import dataclass, field
 import yaml
-from yaml.loader import UnsafeLoader
 
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult
 from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.utils import safe_mean
+
+# Results written before safe serialization was introduced were dumped with
+# `yaml.dump(self)`, which tags every object with its Python class.
+LEGACY_TAG = "!!python/object"
+
+LEGACY_CLASS_TAGS = [
+    "tag:yaml.org,2002:python/object:internet_troubleshooter.result.TestResult",
+    "tag:yaml.org,2002:python/object:internet_troubleshooter.ping_test.PingResult",
+    "tag:yaml.org,2002:python/object:internet_troubleshooter.trace_test.TraceResult",
+    "tag:yaml.org,2002:python/object:internet_troubleshooter.speed_test.SpeedResult",
+]
+
+
+class LegacyResultLoader(yaml.SafeLoader):
+    """SafeLoader that maps the old result class tags onto plain dicts.
+
+    Only the four tags this project used to emit are accepted; every other
+    Python tag still fails as it would under SafeLoader.
+    """
+
+
+def _construct_legacy_mapping(loader, node):
+    return loader.construct_mapping(node, deep=True)
+
+
+for _tag in LEGACY_CLASS_TAGS:
+    LegacyResultLoader.add_constructor(_tag, _construct_legacy_mapping)
 
 
 def trace_name(label, values):
@@ -47,13 +73,64 @@ class TestResult:
                 file=io_target,
             )
 
+    def to_dict(self):
+        return {
+            "pingResult": (
+                None if self.pingResult is None else self.pingResult.to_dict()
+            ),
+            "traceResult": (
+                None if self.traceResult is None else self.traceResult.to_dict()
+            ),
+            "speedResult": (
+                None if self.speedResult is None else self.speedResult.to_dict()
+            ),
+            "timeStamp": self.timeStamp,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        pingResult = data.get("pingResult")
+        traceResult = data.get("traceResult")
+        speedResult = data.get("speedResult")
+        timeStamp = data.get("timeStamp")
+
+        return cls(
+            pingResult=None if pingResult is None else PingResult.from_dict(pingResult),
+            traceResult=(
+                None if traceResult is None else TraceResult.from_dict(traceResult)
+            ),
+            speedResult=(
+                None if speedResult is None else SpeedResult.from_dict(speedResult)
+            ),
+            **({} if timeStamp is None else {"timeStamp": float(timeStamp)}),
+        )
+
     def to_yaml(self):
-        return yaml.dump(self)
+        return yaml.safe_dump(self.to_dict(), default_flow_style=False)
+
+    @staticmethod
+    def load_yaml(content):
+        """Parse the contents of a results file into TestResult objects."""
+        if LEGACY_TAG in content:
+            print(
+                "WARNING: Reading results written in the legacy Python-object "
+                "format. Rewrite the file to migrate it to the current format.",
+                file=sys.stderr,
+            )
+            documents = yaml.load_all(content, Loader=LegacyResultLoader)
+        else:
+            documents = yaml.safe_load_all(content)
+
+        return [
+            TestResult.from_dict(document)
+            for document in documents
+            if isinstance(document, dict)
+        ]
 
     @staticmethod
     def load_results(yaml_filename):
-        with open(yaml_filename) as f:
-            return yaml.load_all(f.read(), Loader=UnsafeLoader)
+        with open(yaml_filename, encoding="utf-8") as f:
+            return TestResult.load_yaml(f.read())
 
     def get_date(self):
         return datetime.fromtimestamp(self.timeStamp)
