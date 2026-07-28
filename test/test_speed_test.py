@@ -187,6 +187,39 @@ def test_execute_test_missing_binary(mocker, capsys):
     assert "ERROR:" in captured.err
 
 
+def test_execute_test_success(mocker, capsys):
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(None, returncode=0, stdout=test_json, stderr=""),
+    )
+
+    assert SpeedResult.execute_test() == test_json
+    assert SpeedResult.run_test() == SpeedResult(results=test_json)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_execute_test_error(mocker, capsys):
+    test_output = """partial speedtest output"""
+    error_output = """Configuration - No servers defined"""
+
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(
+            None, returncode=1, stdout=test_output, stderr=error_output
+        ),
+    )
+
+    assert SpeedResult.execute_test() is None
+    assert SpeedResult.run_test() is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR: Error running speedtest" in captured.err
+    assert test_output in captured.err
+    assert error_output in captured.err
+
+
 def test_check_error(mocker, capsys):
     test_output = ""
     error_output = """speedtest not found"""
