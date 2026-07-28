@@ -1,10 +1,35 @@
 import io
 from time import sleep
 
+import pytest
+import yaml
+
 from internet_troubleshooter.ping_test import PingResult
+from internet_troubleshooter.result import LegacyResultLoader
 from internet_troubleshooter.result import TestResult as InternetTestResult
 from internet_troubleshooter.result import trace_name
+from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.trace_test import TraceResult
+
+LEGACY_YAML = """---
+!!python/object:internet_troubleshooter.result.TestResult
+pingResult: !!python/object:internet_troubleshooter.ping_test.PingResult
+  ip: 8.8.8.8
+  packetLoss: 1.5
+speedResult: !!python/object:internet_troubleshooter.speed_test.SpeedResult
+  download: 58.542856
+  latency: 19.266
+  result: '{"isp": "MyISP", "interface": {"macAddr": "AA:AA:AA:AA:AA:AA"}}'
+  upload: 17.1212
+timeStamp: 1700000000.0
+traceResult: !!python/object:internet_troubleshooter.trace_test.TraceResult
+  pingResults:
+  - !!python/object:internet_troubleshooter.ping_test.PingResult
+    ip: 10.0.0.1
+    packetLoss: 0.0
+  - null
+...
+"""
 
 
 def make_result(timeStamp, packetLoss=None):
@@ -17,6 +42,23 @@ def make_result(timeStamp, packetLoss=None):
         speedResult=None,
         timeStamp=timeStamp,
     )
+
+
+def make_full_result(timeStamp=1700000000.0):
+    return InternetTestResult(
+        pingResult=PingResult(ip="8.8.8.8", packetLoss=1.5),
+        traceResult=TraceResult(
+            pingResults=[PingResult(ip="10.0.0.1", packetLoss=0.0), None]
+        ),
+        speedResult=SpeedResult(upload=17.1212, download=58.542856, latency=19.266),
+        timeStamp=timeStamp,
+    )
+
+
+def write_results(path, results):
+    with open(path, "a", encoding="utf-8") as f:
+        for result in results:
+            print("---\n{}\n...\n".format(result.to_yaml()), file=f)
 
 
 def test_timestamp_is_per_instance():
@@ -73,3 +115,107 @@ def test_to_human():
     text = output.getvalue()
     assert "Mean: 15.00%" in text
     assert "Download: Not enough data." in text
+
+
+def test_to_dict_uses_camel_case_keys():
+    data = make_full_result().to_dict()
+
+    assert sorted(data) == ["pingResult", "speedResult", "timeStamp", "traceResult"]
+    assert data["pingResult"] == {"ip": "8.8.8.8", "packetLoss": 1.5}
+    assert data["traceResult"] == {
+        "pingResults": [{"ip": "10.0.0.1", "packetLoss": 0.0}, None]
+    }
+    assert data["speedResult"] == {
+        "upload": 17.1212,
+        "download": 58.542856,
+        "latency": 19.266,
+    }
+
+
+def test_from_dict_round_trip():
+    result = make_full_result()
+    assert InternetTestResult.from_dict(result.to_dict()) == result
+
+
+def test_from_dict_without_timestamp_uses_now():
+    data = make_full_result().to_dict()
+    del data["timeStamp"]
+
+    assert InternetTestResult.from_dict(data).timeStamp > 1700000000.0
+
+
+def test_from_dict_with_empty_result():
+    result = InternetTestResult.from_dict({"timeStamp": 1.0})
+    assert result == make_result(1.0)
+
+
+def test_to_yaml_is_safe():
+    text = make_full_result().to_yaml()
+
+    assert "!!python/object" not in text
+    assert yaml.safe_load(text) == make_full_result().to_dict()
+
+
+def test_yaml_round_trip_through_file(tmp_path):
+    yaml_file = tmp_path / "results.yaml"
+    results = [make_full_result(1700000000.0), make_full_result(1700000060.0)]
+    write_results(yaml_file, results)
+
+    assert "!!python/object" not in yaml_file.read_text(encoding="utf-8")
+    assert InternetTestResult.load_results(str(yaml_file)) == results
+
+
+def test_yaml_round_trip_appends(tmp_path):
+    yaml_file = tmp_path / "results.yaml"
+    write_results(yaml_file, [make_full_result(1700000000.0)])
+    write_results(yaml_file, [make_full_result(1700000060.0)])
+
+    loaded = InternetTestResult.load_results(str(yaml_file))
+    assert [result.timeStamp for result in loaded] == [1700000000.0, 1700000060.0]
+
+
+def test_load_results_reads_utf8(tmp_path):
+    yaml_file = tmp_path / "results.yaml"
+    result = make_result(1.0, packetLoss=1.0)
+    result.pingResult.ip = "rout\u00e9r.local"
+    write_results(yaml_file, [result])
+
+    loaded = InternetTestResult.load_results(str(yaml_file))
+    assert loaded[0].pingResult.ip == "rout\u00e9r.local"
+
+
+def test_load_results_skips_empty_documents(tmp_path):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text("---\n...\n", encoding="utf-8")
+
+    assert InternetTestResult.load_results(str(yaml_file)) == []
+
+
+def test_load_legacy_results(tmp_path, capsys):
+    yaml_file = tmp_path / "legacy.yaml"
+    yaml_file.write_text(LEGACY_YAML, encoding="utf-8")
+
+    loaded = InternetTestResult.load_results(str(yaml_file))
+    assert loaded == [make_full_result()]
+
+    captured = capsys.readouterr()
+    assert "WARNING:" in captured.err
+    assert "legacy" in captured.err
+
+
+def test_load_legacy_results_drops_raw_speedtest_json(tmp_path, capsys):
+    yaml_file = tmp_path / "legacy.yaml"
+    yaml_file.write_text(LEGACY_YAML, encoding="utf-8")
+
+    loaded = InternetTestResult.load_results(str(yaml_file))
+    capsys.readouterr()
+    assert not hasattr(loaded[0].speedResult, "result")
+    assert "MyISP" not in loaded[0].to_yaml()
+
+
+def test_legacy_loader_rejects_arbitrary_python_tags():
+    with pytest.raises(yaml.YAMLError):
+        yaml.load(
+            '!!python/object/apply:os.system ["echo unsafe"]',
+            Loader=LegacyResultLoader,
+        )

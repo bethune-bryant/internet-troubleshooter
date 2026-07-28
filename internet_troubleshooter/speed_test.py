@@ -9,17 +9,40 @@ SPEEDTEST_HELP_TIMEOUT = 10
 
 @dataclass
 class SpeedResult:
-    result: str = field()
     upload: float = field()
     download: float = field()
     latency: float = field()
 
-    def __init__(self, results):
-        self.result = results
-        parsed_result = json.loads(results)
-        self.upload = float(parsed_result["upload"]["bandwidth"]) / 125000
-        self.download = float(parsed_result["download"]["bandwidth"]) / 125000
-        self.latency = float(parsed_result["ping"]["latency"])
+    def __init__(self, results=None, upload=None, download=None, latency=None):
+        """Build from raw speedtest JSON, or directly from parsed values.
+
+        The raw JSON is deliberately not retained: it contains the MAC address,
+        local and external IPs, and ISP of the machine running the test.
+        """
+        if results is not None:
+            parsed_result = json.loads(results)
+            upload = float(parsed_result["upload"]["bandwidth"]) / 125000
+            download = float(parsed_result["download"]["bandwidth"]) / 125000
+            latency = float(parsed_result["ping"]["latency"])
+
+        self.upload = upload
+        self.download = download
+        self.latency = latency
+
+    def to_dict(self):
+        return {
+            "upload": self.upload,
+            "download": self.download,
+            "latency": self.latency,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            upload=float(data["upload"]),
+            download=float(data["download"]),
+            latency=float(data["latency"]),
+        )
 
     def __str__(self):
         return (
@@ -57,7 +80,7 @@ class SpeedResult:
         return "{}\n\n{}\n\n{}".format(
             summarize(download, "Download", "Mbps"),
             summarize(upload, "Upload", "Mbps"),
-            summarize(latency, "Latency", "Mbps"),
+            summarize(latency, "Latency", "ms"),
         )
 
     @staticmethod

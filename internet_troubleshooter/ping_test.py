@@ -17,6 +17,13 @@ class PingResult:
     def __str__(self):
         return "{:.2f}%: {}".format(self.packetLoss, self.ip)
 
+    def to_dict(self):
+        return {"ip": self.ip, "packetLoss": self.packetLoss}
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(ip=data["ip"], packetLoss=float(data["packetLoss"]))
+
     @staticmethod
     def parse_result(ip, result):
         packet_loss_match = PACKET_LOSS_REGEX.search(result)

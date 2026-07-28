@@ -1,8 +1,36 @@
+import ipaddress
+import re
 import subprocess
 import sys
 from statistics import mean, variance
 
 DEFAULT_TIMEOUT = 120
+
+MAX_HOSTNAME_LENGTH = 253
+HOSTNAME_LABEL_REGEX = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+def is_valid_host(value):
+    """True when value is an IP address or a hostname safe to pass to ping.
+
+    Anything that could be mistaken for a command line flag is rejected.
+    """
+    if not isinstance(value, str) or not value:
+        return False
+
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        pass
+
+    hostname = value[:-1] if value.endswith(".") else value
+    if len(hostname) > MAX_HOSTNAME_LENGTH:
+        return False
+
+    return all(
+        HOSTNAME_LABEL_REGEX.match(label) is not None for label in hostname.split(".")
+    )
 
 
 def debug(debug, *args, **kwargs):

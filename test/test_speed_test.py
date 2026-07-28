@@ -76,6 +76,40 @@ def test_SpeedResult():
     )
 
 
+def test_SpeedResult_does_not_retain_raw_json():
+    x = SpeedResult(results=test_json)
+    assert not hasattr(x, "result")
+    assert "MyISP" not in repr(x)
+    assert "AA:AA:AA:AA:AA:AA" not in repr(x)
+
+
+def test_SpeedResult_to_dict_omits_raw_json():
+    x = SpeedResult(results=test_json)
+    assert x.to_dict() == {
+        "upload": 17.1212,
+        "download": 58.542856,
+        "latency": 19.266,
+    }
+
+
+def test_SpeedResult_from_dict_round_trip():
+    x = SpeedResult(results=test_json)
+    assert SpeedResult.from_dict(x.to_dict()) == x
+
+
+def test_summarize_units():
+    results = [
+        SpeedResult(upload=1.0, download=10.0, latency=20.0),
+        SpeedResult(upload=3.0, download=30.0, latency=40.0),
+    ]
+
+    text = SpeedResult.summarize(results)
+    assert "Download:\n  Mean: 20.00Mbps" in text
+    assert "Upload:\n  Mean: 2.00Mbps" in text
+    assert "Latency:\n  Mean: 30.00ms" in text
+    assert "Mbps" not in text.split("Latency:")[1]
+
+
 def test_check(mocker, capsys):
     test_output = "HELP TEXT"
 

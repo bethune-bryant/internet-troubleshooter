@@ -33,6 +33,22 @@ def parse_trace_line(line):
 class TraceResult:
     pingResults: List[PingResult] = field()
 
+    def to_dict(self):
+        return {
+            "pingResults": [
+                None if ping is None else ping.to_dict() for ping in self.pingResults
+            ]
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            pingResults=[
+                None if ping is None else PingResult.from_dict(ping)
+                for ping in data.get("pingResults") or []
+            ]
+        )
+
     @staticmethod
     def execute_test(ip, count=None, debug=False):
         trace_result = run_command(["traceroute", "-n", ip], timeout=TRACE_TIMEOUT)
