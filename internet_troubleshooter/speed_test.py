@@ -20,7 +20,11 @@ class SpeedResult:
         self.latency = float(parsed_result["ping"]["latency"])
 
     def __str__(self):
-        return "Download:    {:.2f}Mbps\nUpload:      {:.2f}Mbps\nLatency:     {:.2f}ms".format(
+        return (
+            "Download:    {:.2f}Mbps\n"
+            "Upload:      {:.2f}Mbps\n"
+            "Latency:     {:.2f}ms"
+        ).format(
             self.download,
             self.upload,
             self.latency,
@@ -32,9 +36,11 @@ class SpeedResult:
         )
         if speedtest_exists.returncode != 0:
             print(
-                "WARNING: speedtest cli not installed.\nUnable to test speed.\nSee: {}".format(
-                    "https://www.speedtest.net/apps/cli"
-                ),
+                (
+                    "WARNING: speedtest cli not installed.\n"
+                    "Unable to test speed.\n"
+                    "See: {}"
+                ).format("https://www.speedtest.net/apps/cli"),
                 file=sys.stderr,
             )
             return False

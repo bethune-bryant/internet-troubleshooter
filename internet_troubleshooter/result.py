@@ -59,8 +59,15 @@ class TestResult:
         )
 
     def to_html(results, io_target=sys.stdout):
-        from plotly import graph_objs as go
-        from plotly.subplots import make_subplots
+        try:
+            from plotly import graph_objs as go
+            from plotly.subplots import make_subplots
+        except ImportError as e:
+            raise RuntimeError(
+                "HTML output requires plotly, which is not installed. "
+                "Install it with 'pip install internet-troubleshooter[html]' "
+                "or 'pip install plotly'."
+            ) from e
 
         results.sort(key=lambda x: x.timeStamp)
 

@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 88
+extend-ignore = E203
+per-file-ignores =
+    # Holds verbatim `ping` output as test fixtures, which must not be rewrapped.
+    test/test_ping_test.py: E501
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    .venv,
+    venv,
+    *.egg-info
