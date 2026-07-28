@@ -1,10 +1,49 @@
+import subprocess
 import sys
 from statistics import mean, variance
+
+DEFAULT_TIMEOUT = 120
 
 
 def debug(debug, *args, **kwargs):
     if debug:
         print(*args, **kwargs, file=sys.stderr)
+
+
+def run_command(command, timeout=DEFAULT_TIMEOUT):
+    """Run command and return the CompletedProcess, or None if it could not run."""
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print(
+            "ERROR: '{}' timed out after {} seconds.".format(command[0], timeout),
+            file=sys.stderr,
+        )
+    except FileNotFoundError:
+        print(
+            "ERROR: '{}' command not found, is it installed and on PATH?".format(
+                command[0]
+            ),
+            file=sys.stderr,
+        )
+    except OSError as error:
+        print(
+            "ERROR: Unable to run '{}': {}".format(command[0], error),
+            file=sys.stderr,
+        )
+    return None
+
+
+def safe_mean(values):
+    """Mean of values, or None when there is no data to average."""
+    if not values:
+        return None
+    return mean(values)
 
 
 def summarize(values, title="", unit=""):

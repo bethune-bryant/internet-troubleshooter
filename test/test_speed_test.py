@@ -91,6 +91,29 @@ def test_check(mocker, capsys):
     assert captured.err == ""
 
 
+def test_check_missing_binary(mocker, capsys):
+    mocker.patch("subprocess.run", side_effect=FileNotFoundError)
+
+    x = SpeedResult.check()
+    assert not x
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR:" in captured.err
+    assert "speedtest" in captured.err
+    assert "WARNING:" in captured.err
+    assert "https://www.speedtest.net/apps/cli" in captured.err
+
+
+def test_execute_test_missing_binary(mocker, capsys):
+    mocker.patch("subprocess.run", side_effect=FileNotFoundError)
+
+    assert SpeedResult.execute_test() is None
+    assert SpeedResult.run_test() is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR:" in captured.err
+
+
 def test_check_error(mocker, capsys):
     test_output = ""
     error_output = """speedtest not found"""

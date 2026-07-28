@@ -1,8 +1,10 @@
 import json
-import subprocess
 import sys
 from dataclasses import dataclass, field
-from internet_troubleshooter.utils import summarize
+from internet_troubleshooter.utils import run_command, summarize
+
+SPEEDTEST_TIMEOUT = 300
+SPEEDTEST_HELP_TIMEOUT = 10
 
 
 @dataclass
@@ -30,11 +32,12 @@ class SpeedResult:
             self.latency,
         )
 
+    @staticmethod
     def check():
-        speedtest_exists = subprocess.run(
-            ["speedtest", "-h"], capture_output=True, text=True
+        speedtest_exists = run_command(
+            ["speedtest", "-h"], timeout=SPEEDTEST_HELP_TIMEOUT
         )
-        if speedtest_exists.returncode != 0:
+        if speedtest_exists is None or speedtest_exists.returncode != 0:
             print(
                 (
                     "WARNING: speedtest cli not installed.\n"
@@ -46,6 +49,7 @@ class SpeedResult:
             return False
         return True
 
+    @staticmethod
     def summarize(results):
         download = [result.download for result in results if result is not None]
         upload = [result.upload for result in results if result is not None]
@@ -56,10 +60,13 @@ class SpeedResult:
             summarize(latency, "Latency", "Mbps"),
         )
 
+    @staticmethod
     def execute_test():
-        speedtest_result = subprocess.run(
-            ["speedtest", "-f", "json"], capture_output=True, text=True
+        speedtest_result = run_command(
+            ["speedtest", "-f", "json"], timeout=SPEEDTEST_TIMEOUT
         )
+        if speedtest_result is None:
+            return None
         if speedtest_result.returncode != 0:
             print(
                 "ERROR: Error running speedtest.\n{}\n{}".format(
@@ -70,6 +77,7 @@ class SpeedResult:
             return None
         return speedtest_result.stdout
 
+    @staticmethod
     def run_test():
         results = SpeedResult.execute_test()
         if results is not None:

@@ -42,6 +42,30 @@ def test_parseResultBad():
     assert x is None
 
 
+def test_execute_test_missing_binary(mocker, capsys):
+    mocker.patch("os.geteuid", return_value=0)
+    mocker.patch("subprocess.run", side_effect=FileNotFoundError)
+
+    x = PingResult.execute_test("8.8.8.8")
+    assert x is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR:" in captured.err
+    assert "ping" in captured.err
+
+
+def test_run_test_missing_binary(mocker, capsys):
+    mocker.patch("os.geteuid", return_value=0)
+    mocker.patch("subprocess.run", side_effect=FileNotFoundError)
+
+    x = PingResult.run_test("8.8.8.8")
+    assert x is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ERROR:" in captured.err
+    assert "Cannot find packet loss" not in captured.err
+
+
 def test_execute_test(mocker, capsys):
     test_output = """TEST STRING"""
 
@@ -56,6 +80,20 @@ def test_execute_test(mocker, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "WARNING" in captured.err
+
+
+def test_run_test_parse_failure(mocker, capsys):
+    mocker.patch("os.geteuid", return_value=0)
+    mocker.patch(
+        "subprocess.run",
+        return_value=CompletedProcess(None, returncode=0, stdout="MALFORMED"),
+    )
+
+    x = PingResult.run_test("8.8.8.8")
+    assert x is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Cannot find packet loss" in captured.err
 
 
 def test_execute_test_root(mocker, capsys):
