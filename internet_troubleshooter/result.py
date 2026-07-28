@@ -13,6 +13,13 @@ from internet_troubleshooter.utils import safe_mean
 # `yaml.dump(self)`, which tags every object with its Python class.
 LEGACY_TAG = "!!python/object"
 
+# Reference lines drawn on the HTML plots, marking the thresholds below which a
+# connection is considered to be underperforming.
+PLOT_DOWNLOAD_MBPS = 50
+PLOT_UPLOAD_MBPS = 15
+PLOT_LATENCY_MS = 20
+PLOT_PACKET_LOSS_PCT = 3
+
 LEGACY_CLASS_TAGS = [
     "tag:yaml.org,2002:python/object:internet_troubleshooter.result.TestResult",
     "tag:yaml.org,2002:python/object:internet_troubleshooter.ping_test.PingResult",
@@ -46,9 +53,9 @@ def trace_name(label, values):
 
 @dataclass
 class TestResult:
-    pingResult: PingResult = field()
-    traceResult: TraceResult = field()
-    speedResult: SpeedResult = field()
+    pingResult: PingResult
+    traceResult: TraceResult
+    speedResult: SpeedResult
     timeStamp: float = field(default_factory=time)
 
     def human_readable(self, io_target=sys.stdout):
@@ -181,8 +188,8 @@ class TestResult:
             col=1,
         )
         fig.add_hline(
-            y=50,
-            annotation_text="50Mbps",
+            y=PLOT_DOWNLOAD_MBPS,
+            annotation_text="{}Mbps".format(PLOT_DOWNLOAD_MBPS),
             annotation_position="top left",
             line_dash="dash",
             secondary_y=False,
@@ -202,8 +209,8 @@ class TestResult:
             col=1,
         )
         fig.add_hline(
-            y=15,
-            annotation_text="15Mbps",
+            y=PLOT_UPLOAD_MBPS,
+            annotation_text="{}Mbps".format(PLOT_UPLOAD_MBPS),
             annotation_position="top left",
             line_dash="dash",
             secondary_y=False,
@@ -222,7 +229,9 @@ class TestResult:
             row=1,
             col=1,
         )
-        fig.add_hline(y=20, line_dash="dash", secondary_y=True, row=1, col=1)
+        fig.add_hline(
+            y=PLOT_LATENCY_MS, line_dash="dash", secondary_y=True, row=1, col=1
+        )
 
         fig.update_yaxes(
             title_text="Internet Speed(Mbps)",
@@ -252,8 +261,8 @@ class TestResult:
             col=1,
         )
         fig.add_hline(
-            y=3,
-            annotation_text="3%",
+            y=PLOT_PACKET_LOSS_PCT,
+            annotation_text="{}%".format(PLOT_PACKET_LOSS_PCT),
             annotation_position="top right",
             line_dash="dash",
             row=2,

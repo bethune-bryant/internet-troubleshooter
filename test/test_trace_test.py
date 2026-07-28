@@ -3,7 +3,12 @@ from subprocess import CompletedProcess
 import pytest
 
 from internet_troubleshooter.ping_test import PingResult
-from internet_troubleshooter.trace_test import TraceResult, parse_trace_line
+from internet_troubleshooter.trace_test import (
+    TRACE_HOP_PING_COUNT,
+    TraceResult,
+    hop_ping_count,
+    parse_trace_line,
+)
 
 
 @pytest.mark.parametrize(
@@ -94,6 +99,87 @@ def test_run_test_skips_failed_hops(mocker):
     x = TraceResult.run_test("8.8.8.8")
     assert len(x.pingResults) == 1
     assert x.pingResults[0].ip == "192.168.1.1"
+
+
+def test_run_test_deduplicates_hop_ips(mocker):
+    trace_output = "\n".join(
+        [
+            "traceroute to 8.8.8.8 (8.8.8.8), 30 hops max, 60 byte packets",
+            " 1  192.168.1.1  0.310 ms",
+            " 2  10.0.0.1  1.310 ms",
+            " 3  10.0.0.1  1.420 ms",
+            " 4  192.168.1.1  1.500 ms",
+            " 5  * * *",
+            " 6  10.0.0.1  2.100 ms",
+            " 7  8.8.8.8  9.310 ms",
+        ]
+    )
+    mocker.patch(
+        "internet_troubleshooter.trace_test.TraceResult.execute_test",
+        return_value=trace_output,
+    )
+    ping = mocker.patch(
+        "internet_troubleshooter.trace_test.PingResult.run_test",
+        side_effect=lambda ip, count=None: PingResult(ip=ip, packetLoss=0.0),
+    )
+
+    x = TraceResult.run_test("8.8.8.8")
+
+    assert [result.ip for result in x.pingResults] == ["192.168.1.1", "10.0.0.1"]
+    assert [call.args[0] for call in ping.call_args_list] == [
+        "192.168.1.1",
+        "10.0.0.1",
+    ]
+
+
+def test_hop_ips_preserves_first_seen_order():
+    trace_output = "\n".join(
+        [
+            " 1  10.0.0.2  0.1 ms",
+            " 2  10.0.0.1  0.2 ms",
+            " 3  10.0.0.2  0.3 ms",
+            " 4  198.51.100.7  0.4 ms",
+        ]
+    )
+
+    assert TraceResult.hop_ips(trace_output, "198.51.100.7") == [
+        "10.0.0.2",
+        "10.0.0.1",
+    ]
+
+
+@pytest.mark.parametrize(
+    "count, expected",
+    [
+        (None, TRACE_HOP_PING_COUNT),
+        (400, TRACE_HOP_PING_COUNT),
+        (TRACE_HOP_PING_COUNT, TRACE_HOP_PING_COUNT),
+        (1, 1),
+    ],
+)
+def test_hop_ping_count(count, expected):
+    assert hop_ping_count(count) == expected
+
+
+def test_run_test_uses_smaller_count_for_hops(mocker):
+    trace_output = "\n".join(
+        [
+            " 1  192.168.1.1  0.310 ms",
+            " 2  8.8.8.8  9.310 ms",
+        ]
+    )
+    mocker.patch(
+        "internet_troubleshooter.trace_test.TraceResult.execute_test",
+        return_value=trace_output,
+    )
+    ping = mocker.patch(
+        "internet_troubleshooter.trace_test.PingResult.run_test",
+        return_value=PingResult(ip="192.168.1.1", packetLoss=0.0),
+    )
+
+    TraceResult.run_test("8.8.8.8", 400)
+
+    assert ping.call_args.args == ("192.168.1.1", TRACE_HOP_PING_COUNT)
 
 
 def test_run_test_no_trace(mocker):

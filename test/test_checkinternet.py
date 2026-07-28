@@ -68,6 +68,31 @@ def test_run_rejects_invalid_ping_ip(mocker, capsys, ping_ip):
     assert not ping.called
 
 
+@pytest.mark.parametrize("ping_count", [0, -1, -400])
+def test_run_rejects_invalid_ping_count(mocker, capsys, ping_count):
+    ping = mocker.patch(
+        "internet_troubleshooter.checkinternet.PingResult.run_test",
+        return_value=None,
+    )
+
+    assert checkinternet.run(make_args(ping_count=ping_count)) == 1
+
+    captured = capsys.readouterr()
+    assert "ERROR:" in captured.err
+    assert "--ping_count" in captured.err
+    assert not ping.called
+
+
+def test_run_accepts_unset_ping_count(mocker, capsys):
+    mocker.patch(
+        "internet_troubleshooter.checkinternet.PingResult.run_test",
+        return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
+    )
+
+    assert checkinternet.run(make_args(ping_count=None)) == 0
+    capsys.readouterr()
+
+
 def test_run_succeeds_when_ping_works(mocker, capsys):
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",

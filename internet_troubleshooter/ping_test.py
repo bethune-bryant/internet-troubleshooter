@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from internet_troubleshooter.utils import run_command, summarize
 
 PACKET_LOSS_REGEX = re.compile(r"([\d.]+)%\s+packet\s+loss")
@@ -11,8 +11,8 @@ PING_TIMEOUT = 120
 
 @dataclass
 class PingResult:
-    ip: str = field()
-    packetLoss: float = field()
+    ip: str
+    packetLoss: float
 
     def __str__(self):
         return "{:.2f}%: {}".format(self.packetLoss, self.ip)
@@ -34,7 +34,7 @@ class PingResult:
     @staticmethod
     def summarize(results):
         packetLoss = [result.packetLoss for result in results if result is not None]
-        return "{}".format(summarize(packetLoss, "Packet Loss", "%"))
+        return summarize(packetLoss, "Packet Loss", "%")
 
     @staticmethod
     def execute_test(ip, count=None):

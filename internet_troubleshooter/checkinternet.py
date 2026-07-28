@@ -12,25 +12,64 @@ from internet_troubleshooter.utils import debug, is_valid_host
 
 def cli_input():
     parser = argparse.ArgumentParser(description="Test internet connection.")
-    parser.add_argument("--debug", action="store_true")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print progress and raw command output to stderr.",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    run_cmd = subparsers.add_parser("run")
+    run_cmd = subparsers.add_parser("run", help="Run the tests once.")
 
-    run_cmd.add_argument("--ping_ip", default="8.8.8.8")
-    run_cmd.add_argument("--ping_count", default=None, type=int)
-    run_cmd.add_argument("--max_packet_loss", default=3.0, type=float)
-    run_cmd.add_argument("--skip_speedtest", action="store_true")
-    run_cmd.add_argument("--skip_pingtest", action="store_true")
-    run_cmd.add_argument("--yaml_file", default=None, type=str)
+    run_cmd.add_argument(
+        "--ping_ip",
+        default="8.8.8.8",
+        help="IP address or hostname to ping. (default: %(default)s)",
+    )
+    run_cmd.add_argument(
+        "--ping_count",
+        default=None,
+        type=int,
+        help="Packets to send. (default: 400 as root, otherwise 10)",
+    )
+    run_cmd.add_argument(
+        "--max_packet_loss",
+        default=3.0,
+        type=float,
+        help="Packet loss percent above which a traceroute is run. "
+        "(default: %(default)s)",
+    )
+    run_cmd.add_argument(
+        "--skip_speedtest", action="store_true", help="Do not run the speed test."
+    )
+    run_cmd.add_argument(
+        "--skip_pingtest",
+        action="store_true",
+        help="Do not run the ping test, and therefore never traceroute.",
+    )
+    run_cmd.add_argument(
+        "--yaml_file",
+        default=None,
+        type=str,
+        help="File to append this run's results to, for later display.",
+    )
 
     run_cmd.set_defaults(func=run)
 
-    display_cmd = subparsers.add_parser("display")
+    display_cmd = subparsers.add_parser(
+        "display", help="Summarize results logged by previous runs."
+    )
 
-    display_cmd.add_argument("--yaml_file", required=True)
-    display_cmd.add_argument("--format", default="human", choices=["human", "html"])
+    display_cmd.add_argument(
+        "--yaml_file", required=True, help="File of logged results to read."
+    )
+    display_cmd.add_argument(
+        "--format",
+        default="human",
+        choices=["human", "html"],
+        help="Output format, written to stdout. (default: %(default)s)",
+    )
 
     display_cmd.set_defaults(func=display)
 
@@ -43,6 +82,17 @@ def _validate_ping_ip(ping_ip):
     print(
         "ERROR: Invalid --ping_ip value '{}', "
         "expected an IP address or hostname.".format(ping_ip),
+        file=sys.stderr,
+    )
+    return False
+
+
+def _validate_ping_count(count):
+    if count is None or count >= 1:
+        return True
+    print(
+        "ERROR: Invalid --ping_count value '{}', "
+        "expected a positive number of packets.".format(count),
         file=sys.stderr,
     )
     return False
@@ -111,6 +161,9 @@ def run(args):
     debug(args.debug, str(datetime.now()))
 
     if not _validate_ping_ip(args.ping_ip):
+        return 1
+
+    if not _validate_ping_count(args.ping_count):
         return 1
 
     debug(args.debug, "Running Tests")
