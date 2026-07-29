@@ -5,6 +5,7 @@ import pytest
 
 from internet_troubleshooter import checkinternet
 from internet_troubleshooter.ping_test import PingResult
+from internet_troubleshooter.render import RenderThresholds
 from internet_troubleshooter.result import TestResult as InternetTestResult
 from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.trace_test import (
@@ -438,10 +439,23 @@ def test_display_html(mocker, tmp_path, capsys):
 
     to_html = mocker.patch("internet_troubleshooter.checkinternet.to_html")
 
-    args = Namespace(yaml_file=str(yaml_file), format="html")
+    args = Namespace(
+        yaml_file=str(yaml_file),
+        format="html",
+        target_download_mbps=100.0,
+        target_upload_mbps=50.0,
+        target_latency_ms=10.0,
+        target_packet_loss_pct=1.5,
+    )
     assert checkinternet.display(args) == 0
 
     assert to_html.call_args.args[0][0].ping_result.packet_loss == 1.0
+    assert to_html.call_args.args[2] == RenderThresholds(
+        download_mbps=100.0,
+        upload_mbps=50.0,
+        latency_ms=10.0,
+        packet_loss_pct=1.5,
+    )
     capsys.readouterr()
 
 
@@ -491,7 +505,42 @@ def test_cli_input_display_defaults(mocker):
     args = checkinternet.cli_input()
     assert args.command == "display"
     assert args.format == "human"
+    assert args.target_download_mbps == 50
+    assert args.target_upload_mbps == 15
+    assert args.target_latency_ms == 20
+    assert args.target_packet_loss_pct == 3
     assert args.func is checkinternet.display
+
+
+def test_cli_input_display_accepts_custom_thresholds(mocker):
+    mocker.patch(
+        "sys.argv",
+        [
+            "checkinternet",
+            "display",
+            "--yaml_file",
+            "in.yaml",
+            "--format",
+            "html",
+            "--target_download_mbps",
+            "200",
+            "--target_upload_mbps",
+            "100",
+            "--target_latency_ms",
+            "12.5",
+            "--target_packet_loss_pct",
+            "0.5",
+        ],
+    )
+
+    args = checkinternet.cli_input()
+    assert args.format == "html"
+    assert checkinternet._display_thresholds(args) == RenderThresholds(
+        download_mbps=200.0,
+        upload_mbps=100.0,
+        latency_ms=12.5,
+        packet_loss_pct=0.5,
+    )
 
 
 def test_cli_input_requires_command(mocker, capsys):

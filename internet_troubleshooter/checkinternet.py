@@ -7,7 +7,15 @@ import sys
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult, default_hop_ping_count
 from internet_troubleshooter.speed_test import SpeedResult
-from internet_troubleshooter.render import to_html, to_human
+from internet_troubleshooter.render import (
+    PLOT_DOWNLOAD_MBPS,
+    PLOT_LATENCY_MS,
+    PLOT_PACKET_LOSS_PCT,
+    PLOT_UPLOAD_MBPS,
+    RenderThresholds,
+    to_html,
+    to_human,
+)
 from internet_troubleshooter.result import TestResult
 from internet_troubleshooter.utils import configure_logging, is_valid_host
 
@@ -80,6 +88,33 @@ def cli_input():
         default="human",
         choices=["human", "html"],
         help="Output format, written to stdout. (default: %(default)s)",
+    )
+    display_cmd.add_argument(
+        "--target_download_mbps",
+        default=PLOT_DOWNLOAD_MBPS,
+        type=float,
+        help="Download speed the HTML report treats as healthy. "
+        "(default: %(default)s)",
+    )
+    display_cmd.add_argument(
+        "--target_upload_mbps",
+        default=PLOT_UPLOAD_MBPS,
+        type=float,
+        help="Upload speed the HTML report treats as healthy. (default: %(default)s)",
+    )
+    display_cmd.add_argument(
+        "--target_latency_ms",
+        default=PLOT_LATENCY_MS,
+        type=float,
+        help="Highest latency the HTML report treats as healthy. "
+        "(default: %(default)s)",
+    )
+    display_cmd.add_argument(
+        "--target_packet_loss_pct",
+        default=PLOT_PACKET_LOSS_PCT,
+        type=float,
+        help="Highest packet loss the HTML report treats as healthy. "
+        "(default: %(default)s)",
     )
 
     display_cmd.set_defaults(func=display)
@@ -217,6 +252,16 @@ def run(args):
     return 0
 
 
+def _display_thresholds(args):
+    """The healthy thresholds the HTML report draws and colors against."""
+    return RenderThresholds(
+        download_mbps=args.target_download_mbps,
+        upload_mbps=args.target_upload_mbps,
+        latency_ms=args.target_latency_ms,
+        packet_loss_pct=args.target_packet_loss_pct,
+    )
+
+
 def display(args):
     try:
         results = TestResult.load_results(args.yaml_file)
@@ -228,7 +273,7 @@ def display(args):
         return 1
 
     if args.format == "html":
-        to_html(results, sys.stdout)
+        to_html(results, sys.stdout, _display_thresholds(args))
     else:
         to_human(results, sys.stdout)
 
