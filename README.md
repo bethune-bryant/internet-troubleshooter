@@ -16,10 +16,12 @@ A single run measures packet loss to a target address and download, upload, and 
 | --- | --- |
 | Python 3.9 or newer | |
 | `ping` | Usually preinstalled. Part of `iputils-ping` on Debian/Ubuntu. |
-| `traceroute` | `sudo apt install traceroute`. Only needed when packet loss exceeds `--max_packet_loss`. |
+| `traceroute` | `sudo apt install traceroute`, or the `inetutils-traceroute` package. Only needed when packet loss exceeds `--max_packet_loss`. |
 | Ookla `speedtest` CLI | See below. Only needed for speed tests. |
 
 If the `speedtest` CLI is missing, `checkinternet run` prints a warning and reports only packet loss; it does not fail. If `traceroute` is missing, the traceroute step reports an error and is skipped.
+
+Debian and Ubuntu package two unrelated traceroute implementations and either one works. The classic `traceroute` package is preferred but not required: it is asked to skip reverse lookups with `-n`, while `inetutils-traceroute`, which rejects `-n` and prints numeric addresses anyway, is run without it. The right invocation is detected from the installed binary's help text, so nothing needs to be configured.
 
 Install the Ookla Speedtest CLI on Debian/Ubuntu with:
 

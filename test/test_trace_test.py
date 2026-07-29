@@ -1,5 +1,5 @@
 import logging
-from subprocess import CompletedProcess
+from subprocess import CompletedProcess, TimeoutExpired
 
 import pytest
 
@@ -11,6 +11,47 @@ from internet_troubleshooter.trace_test import (
     default_hop_ping_count,
     parse_trace_line,
 )
+
+# Abbreviated help output of the two traceroute implementations Debian and
+# Ubuntu package; only the classic one lists -n.
+CLASSIC_HELP = "\n".join(
+    [
+        "Usage:",
+        "  traceroute [ -46dFITnreAUDV ] [ -f first_ttl ] host",
+        "Options:",
+        "  -4                          Use IPv4",
+        "  -n                          Do not resolve IP addresses",
+        "  -q nqueries  --queries=nqueries  Send nqueries probes per hop",
+    ]
+)
+INETUTILS_HELP = "\n".join(
+    [
+        "Usage: traceroute [OPTION...] HOST",
+        "Print the route packets trace to network host.",
+        "",
+        "  -f, --first-hop=NUM        set initial hop distance",
+        "  -m, --max-hop=NUM          set maximal hop count (default: 64)",
+        "      --resolve-hostnames    resolve hostnames",
+        "  -?, --help                 give this help list",
+    ]
+)
+INVALID_NUMERIC_ERROR = "\n".join(
+    [
+        "traceroute: invalid option -- 'n'",
+        "Try 'traceroute --help' or 'traceroute --usage' for more information.",
+    ]
+)
+
+
+@pytest.fixture(autouse=True)
+def unprobed_traceroute(mocker):
+    """Forget which traceroute is installed, so each test probes on its own."""
+    mocker.patch("internet_troubleshooter.trace_test._numeric_supported", None)
+
+
+def _help_then(*results):
+    """subprocess.run results for the -n probe followed by the traces after it."""
+    return [CompletedProcess(None, returncode=0, stdout=CLASSIC_HELP), *results]
 
 
 @pytest.mark.parametrize(
@@ -25,6 +66,11 @@ from internet_troubleshooter.trace_test import (
         (" 7  * 203.0.113.9  30.000 ms *", "203.0.113.9"),
         (" 8  * * 198.51.100.7  9.1 ms", "198.51.100.7"),
         (" 9  203.0.113.9  9.1 ms !H", "203.0.113.9"),
+        # inetutils-traceroute glues the unit to the time and is numeric by
+        # default, so its hop lines have no space before `ms`.
+        (" 1  192.168.1.1  8.310ms  8.447ms  8.461ms", "192.168.1.1"),
+        (" 2  * 10.0.0.1  12.100ms *", "10.0.0.1"),
+        (" 3  gateway (192.168.1.1)  8.310ms", "192.168.1.1"),
     ],
 )
 def test_parse_trace_line(line, expected):
@@ -55,6 +101,10 @@ def test_TraceResult():
 def test_execute_test(mocker, capsys):
     test_output = """TEST STRING"""
 
+    mocker.patch(
+        "internet_troubleshooter.trace_test._traceroute_supports_numeric",
+        return_value=True,
+    )
     run = mocker.patch(
         "subprocess.run",
         return_value=CompletedProcess(None, returncode=0, stdout=test_output),
@@ -68,15 +118,155 @@ def test_execute_test(mocker, capsys):
     assert captured.err == ""
 
 
+@pytest.mark.parametrize(
+    "help_output, expected_command",
+    [
+        (CLASSIC_HELP, ["traceroute", "-n", "8.8.8.8"]),
+        (INETUTILS_HELP, ["traceroute", "8.8.8.8"]),
+    ],
+)
+def test_execute_test_picks_command_from_help(
+    mocker, capsys, help_output, expected_command
+):
+    test_output = """TEST STRING"""
+    run = mocker.patch(
+        "subprocess.run",
+        side_effect=[
+            CompletedProcess(None, returncode=0, stdout=help_output),
+            CompletedProcess(None, returncode=0, stdout=test_output),
+        ],
+    )
+
+    assert TraceResult.execute_test("8.8.8.8") == test_output
+    assert [call.args[0] for call in run.call_args_list] == [
+        ["traceroute", "--help"],
+        expected_command,
+    ]
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_execute_test_probes_help_only_once(mocker):
+    run = mocker.patch(
+        "subprocess.run",
+        side_effect=_help_then(
+            CompletedProcess(None, returncode=0, stdout="FIRST"),
+            CompletedProcess(None, returncode=0, stdout="SECOND"),
+        ),
+    )
+
+    assert TraceResult.execute_test("8.8.8.8") == "FIRST"
+    assert TraceResult.execute_test("8.8.4.4") == "SECOND"
+    assert [call.args[0] for call in run.call_args_list] == [
+        ["traceroute", "--help"],
+        ["traceroute", "-n", "8.8.8.8"],
+        ["traceroute", "-n", "8.8.4.4"],
+    ]
+
+
+def test_execute_test_help_reports_numeric_support_at_debug_level(mocker, caplog):
+    mocker.patch(
+        "subprocess.run",
+        side_effect=_help_then(CompletedProcess(None, returncode=0, stdout="TRACE")),
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        TraceResult.execute_test("8.8.8.8")
+
+    assert "traceroute -n supported: True" in caplog.text
+    assert "Traceroute command: ['traceroute', '-n', '8.8.8.8']" in caplog.text
+
+
+def test_execute_test_retries_without_numeric_option(mocker, capsys, caplog):
+    test_output = """TEST STRING"""
+    run = mocker.patch(
+        "subprocess.run",
+        side_effect=_help_then(
+            CompletedProcess(
+                None, returncode=1, stdout="", stderr=INVALID_NUMERIC_ERROR
+            ),
+            CompletedProcess(None, returncode=0, stdout=test_output),
+        ),
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        assert TraceResult.execute_test("8.8.8.8") == test_output
+
+    assert [call.args[0] for call in run.call_args_list] == [
+        ["traceroute", "--help"],
+        ["traceroute", "-n", "8.8.8.8"],
+        ["traceroute", "8.8.8.8"],
+    ]
+    assert "retrying as: ['traceroute', '8.8.8.8']" in caplog.text
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_execute_test_retry_updates_cached_numeric_support(mocker):
+    run = mocker.patch(
+        "subprocess.run",
+        side_effect=_help_then(
+            CompletedProcess(
+                None, returncode=1, stdout="", stderr=INVALID_NUMERIC_ERROR
+            ),
+            CompletedProcess(None, returncode=0, stdout="FIRST"),
+            CompletedProcess(None, returncode=0, stdout="SECOND"),
+        ),
+    )
+
+    assert TraceResult.execute_test("8.8.8.8") == "FIRST"
+    assert TraceResult.execute_test("8.8.4.4") == "SECOND"
+    assert [call.args[0] for call in run.call_args_list] == [
+        ["traceroute", "--help"],
+        ["traceroute", "-n", "8.8.8.8"],
+        ["traceroute", "8.8.8.8"],
+        ["traceroute", "8.8.4.4"],
+    ]
+
+
+def test_execute_test_does_not_retry_other_option_errors(mocker, capsys):
+    error_output = "traceroute: invalid option -- 'q'"
+    run = mocker.patch(
+        "subprocess.run",
+        side_effect=_help_then(
+            CompletedProcess(None, returncode=1, stdout="", stderr=error_output)
+        ),
+    )
+
+    assert TraceResult.execute_test("8.8.8.8") is None
+    assert run.call_count == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert error_output in captured.err
+
+
+def test_execute_test_trace_timeout(mocker, capsys):
+    mocker.patch(
+        "subprocess.run",
+        side_effect=_help_then(TimeoutExpired("traceroute", 120)),
+    )
+
+    assert TraceResult.execute_test("8.8.8.8") is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "timed out" in captured.err
+
+
 def test_execute_test_missing_binary(mocker, capsys):
-    mocker.patch("subprocess.run", side_effect=FileNotFoundError)
+    run = mocker.patch("subprocess.run", side_effect=FileNotFoundError)
 
     x = TraceResult.execute_test("8.8.8.8")
     assert x is None
+    # The probe already showed traceroute cannot run, so no trace is attempted
+    # and the failure is only reported once.
+    assert run.call_count == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "ERROR:" in captured.err
     assert "traceroute" in captured.err
+    assert captured.err.count("ERROR:") == 1
 
 
 def test_run_test_skips_failed_hops(mocker):
