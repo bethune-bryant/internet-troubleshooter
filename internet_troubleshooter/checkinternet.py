@@ -134,19 +134,19 @@ def _run_ping_tests(args, test_result):
     attempted = 1
     succeeded = 0
 
-    test_result.pingResult = PingResult.run_test(args.ping_ip, args.ping_count)
-    logger.debug("Ping Result: %s", test_result.pingResult)
+    test_result.ping_result = PingResult.run_test(args.ping_ip, args.ping_count)
+    logger.debug("Ping Result: %s", test_result.ping_result)
 
-    if test_result.pingResult is not None:
+    if test_result.ping_result is not None:
         succeeded = 1
 
     if (
-        test_result.pingResult is None
-        or test_result.pingResult.packetLoss > args.max_packet_loss
+        test_result.ping_result is None
+        or test_result.ping_result.packet_loss > args.max_packet_loss
     ):
         logger.debug("Running TraceTest")
         hop_count = _resolve_trace_hop_ping_count(args.trace_hop_ping_count)
-        test_result.traceResult = TraceResult.run_test(args.ping_ip, hop_count)
+        test_result.trace_result = TraceResult.run_test(args.ping_ip, hop_count)
 
     return attempted, succeeded
 
@@ -161,8 +161,8 @@ def _run_speedtest(args, test_result):
         return 0, 0
 
     logger.debug("Running SpeedTest")
-    test_result.speedResult = SpeedResult.run_test()
-    if test_result.speedResult is None:
+    test_result.speed_result = SpeedResult.run_test()
+    if test_result.speed_result is None:
         return 1, 0
     return 1, 1
 
@@ -197,7 +197,7 @@ def run(args):
         return 1
 
     logger.debug("Running Tests")
-    test_result = TestResult(pingResult=None, traceResult=None, speedResult=None)
+    test_result = TestResult(ping_result=None, trace_result=None, speed_result=None)
 
     attempted, succeeded = _run_ping_tests(args, test_result)
     speed_attempted, speed_succeeded = _run_speedtest(args, test_result)

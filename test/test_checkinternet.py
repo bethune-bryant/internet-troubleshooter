@@ -48,13 +48,13 @@ def test_run_traces_when_ping_fails(mocker, capsys):
 
 
 def test_run_traces_when_packet_loss_high(mocker, capsys):
-    trace = run_with_ping(mocker, PingResult(ip="8.8.8.8", packetLoss=50.0))
+    trace = run_with_ping(mocker, PingResult(ip="8.8.8.8", packet_loss=50.0))
     capsys.readouterr()
     assert trace.called
 
 
 def test_run_skips_trace_when_healthy(mocker, capsys):
-    trace = run_with_ping(mocker, PingResult(ip="8.8.8.8", packetLoss=0.0))
+    trace = run_with_ping(mocker, PingResult(ip="8.8.8.8", packet_loss=0.0))
     capsys.readouterr()
     assert not trace.called
 
@@ -116,7 +116,7 @@ def test_run_trace_hop_count_defaults_by_uid(mocker, capsys, uid, expected):
     mocker.patch("os.geteuid", return_value=uid)
     trace = run_with_ping(
         mocker,
-        PingResult(ip="8.8.8.8", packetLoss=50.0),
+        PingResult(ip="8.8.8.8", packet_loss=50.0),
         ping_count=400,
         trace_hop_ping_count=None,
     )
@@ -129,7 +129,7 @@ def test_run_trace_hop_count_uses_explicit_value(mocker, capsys):
     mocker.patch("os.geteuid", return_value=0)
     trace = run_with_ping(
         mocker,
-        PingResult(ip="8.8.8.8", packetLoss=50.0),
+        PingResult(ip="8.8.8.8", packet_loss=50.0),
         ping_count=400,
         trace_hop_ping_count=7,
     )
@@ -153,7 +153,7 @@ def test_run_pings_hops_with_hop_count_not_ping_count(mocker, capsys):
     ping = mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
         side_effect=lambda ip, count=None: PingResult(
-            ip=ip, packetLoss=50.0 if ip == "8.8.8.8" else 0.0
+            ip=ip, packet_loss=50.0 if ip == "8.8.8.8" else 0.0
         ),
     )
 
@@ -171,7 +171,7 @@ def test_run_pings_hops_with_hop_count_not_ping_count(mocker, capsys):
 def test_run_accepts_unset_ping_count(mocker, capsys):
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
-        return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
+        return_value=PingResult(ip="8.8.8.8", packet_loss=0.0),
     )
 
     assert checkinternet.run(make_args(ping_count=None)) == 0
@@ -181,7 +181,7 @@ def test_run_accepts_unset_ping_count(mocker, capsys):
 def test_run_succeeds_when_ping_works(mocker, capsys):
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
-        return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
+        return_value=PingResult(ip="8.8.8.8", packet_loss=0.0),
     )
 
     assert checkinternet.run(make_args()) == 0
@@ -189,7 +189,7 @@ def test_run_succeeds_when_ping_works(mocker, capsys):
 
 
 def test_run_debug_logging_ping_only(mocker, capsys, caplog):
-    ping_result = PingResult(ip="8.8.8.8", packetLoss=0.0)
+    ping_result = PingResult(ip="8.8.8.8", packet_loss=0.0)
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
         return_value=ping_result,
@@ -236,7 +236,7 @@ def test_run_debug_logging_with_trace_and_yaml(mocker, tmp_path, capsys, caplog)
 def test_run_debug_logging_with_speedtest(mocker, capsys, caplog):
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
-        return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
+        return_value=PingResult(ip="8.8.8.8", packet_loss=0.0),
     )
     mocker.patch(
         "internet_troubleshooter.checkinternet.SpeedResult.check",
@@ -259,7 +259,7 @@ def test_run_debug_logging_with_speedtest(mocker, capsys, caplog):
 def test_run_debug_logging_records_only_debug_level(mocker, capsys, caplog):
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
-        return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
+        return_value=PingResult(ip="8.8.8.8", packet_loss=0.0),
     )
 
     with caplog.at_level(logging.DEBUG):
@@ -380,7 +380,7 @@ def test_run_writes_yaml_file(mocker, tmp_path, capsys):
     yaml_file = tmp_path / "results.yaml"
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
-        return_value=PingResult(ip="8.8.8.8", packetLoss=2.0),
+        return_value=PingResult(ip="8.8.8.8", packet_loss=2.0),
     )
 
     assert checkinternet.run(make_args(yaml_file=str(yaml_file))) == 0
@@ -392,13 +392,13 @@ def test_run_writes_yaml_file(mocker, tmp_path, capsys):
 
     results = InternetTestResult.load_results(str(yaml_file))
     assert len(results) == 2
-    assert all(result.pingResult.packetLoss == 2.0 for result in results)
+    assert all(result.ping_result.packet_loss == 2.0 for result in results)
 
 
 def test_run_reports_unwritable_yaml_file(mocker, tmp_path, capsys):
     mocker.patch(
         "internet_troubleshooter.checkinternet.PingResult.run_test",
-        return_value=PingResult(ip="8.8.8.8", packetLoss=0.0),
+        return_value=PingResult(ip="8.8.8.8", packet_loss=0.0),
     )
 
     args = make_args(yaml_file=str(tmp_path / "missing" / "results.yaml"))
@@ -411,11 +411,11 @@ def test_run_reports_unwritable_yaml_file(mocker, tmp_path, capsys):
 def test_display_human(tmp_path, capsys):
     yaml_file = tmp_path / "results.yaml"
     with open(yaml_file, "a", encoding="utf-8") as f:
-        for packetLoss in (10.0, 20.0):
+        for packet_loss in (10.0, 20.0):
             result = InternetTestResult(
-                pingResult=PingResult(ip="8.8.8.8", packetLoss=packetLoss),
-                traceResult=None,
-                speedResult=None,
+                ping_result=PingResult(ip="8.8.8.8", packet_loss=packet_loss),
+                trace_result=None,
+                speed_result=None,
             )
             print("---\n{}\n...\n".format(result.to_yaml()), file=f)
 
@@ -430,9 +430,9 @@ def test_display_human(tmp_path, capsys):
 def test_display_html(mocker, tmp_path, capsys):
     yaml_file = tmp_path / "results.yaml"
     result = InternetTestResult(
-        pingResult=PingResult(ip="8.8.8.8", packetLoss=1.0),
-        traceResult=None,
-        speedResult=None,
+        ping_result=PingResult(ip="8.8.8.8", packet_loss=1.0),
+        trace_result=None,
+        speed_result=None,
     )
     yaml_file.write_text("---\n{}\n...\n".format(result.to_yaml()), encoding="utf-8")
 
@@ -441,7 +441,7 @@ def test_display_html(mocker, tmp_path, capsys):
     args = Namespace(yaml_file=str(yaml_file), format="html")
     assert checkinternet.display(args) == 0
 
-    assert to_html.call_args.args[0][0].pingResult.packetLoss == 1.0
+    assert to_html.call_args.args[0][0].ping_result.packet_loss == 1.0
     capsys.readouterr()
 
 
