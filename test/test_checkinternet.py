@@ -436,7 +436,7 @@ def test_display_html(mocker, tmp_path, capsys):
     )
     yaml_file.write_text("---\n{}\n...\n".format(result.to_yaml()), encoding="utf-8")
 
-    to_html = mocker.patch("internet_troubleshooter.checkinternet.TestResult.to_html")
+    to_html = mocker.patch("internet_troubleshooter.checkinternet.to_html")
 
     args = Namespace(yaml_file=str(yaml_file), format="html")
     assert checkinternet.display(args) == 0
