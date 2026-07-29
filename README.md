@@ -138,6 +138,8 @@ $ checkinternet display --yaml_file troubleshooting.yaml --format html > trouble
 
 HTML output requires the `html` extra; without it `display --format html` fails with an error stating that plotly is not installed.
 
+The HTML report is a single self-contained dark themed page with three sections: metric cards showing the mean, minimum, and maximum of each measurement against its healthy threshold; interactive speed, latency, and packet loss charts; and a scrollable table of traceroute hops with one column per run, whose addresses and loss figures can be selected and copied.
+
 ![HTML Plot](docs/DiplayHTML.PNG)
 
 ### Result Log Format
