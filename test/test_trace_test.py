@@ -5,9 +5,10 @@ import pytest
 
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import (
-    TRACE_HOP_PING_COUNT,
+    DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT,
+    DEFAULT_TRACE_HOP_PING_COUNT_ROOT,
     TraceResult,
-    hop_ping_count,
+    default_hop_ping_count,
     parse_trace_line,
 )
 
@@ -121,7 +122,7 @@ def test_run_test_deduplicates_hop_ips(mocker):
     )
     ping = mocker.patch(
         "internet_troubleshooter.trace_test.PingResult.run_test",
-        side_effect=lambda ip, count=None: PingResult(ip=ip, packetLoss=0.0),
+        side_effect=lambda ip, hop_count=None: PingResult(ip=ip, packetLoss=0.0),
     )
 
     x = TraceResult.run_test("8.8.8.8")
@@ -195,19 +196,19 @@ def test_run_test_debug_logging(mocker, capsys, caplog):
 
 
 @pytest.mark.parametrize(
-    "count, expected",
+    "uid, expected",
     [
-        (None, TRACE_HOP_PING_COUNT),
-        (400, TRACE_HOP_PING_COUNT),
-        (TRACE_HOP_PING_COUNT, TRACE_HOP_PING_COUNT),
-        (1, 1),
+        (0, DEFAULT_TRACE_HOP_PING_COUNT_ROOT),
+        (1000, DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT),
     ],
 )
-def test_hop_ping_count(count, expected):
-    assert hop_ping_count(count) == expected
+def test_default_hop_ping_count(mocker, uid, expected):
+    mocker.patch("os.geteuid", return_value=uid)
+
+    assert default_hop_ping_count() == expected
 
 
-def test_run_test_uses_smaller_count_for_hops(mocker):
+def _patch_trace_with_one_hop(mocker):
     trace_output = "\n".join(
         [
             " 1  192.168.1.1  0.310 ms",
@@ -218,14 +219,35 @@ def test_run_test_uses_smaller_count_for_hops(mocker):
         "internet_troubleshooter.trace_test.TraceResult.execute_test",
         return_value=trace_output,
     )
-    ping = mocker.patch(
+    return mocker.patch(
         "internet_troubleshooter.trace_test.PingResult.run_test",
         return_value=PingResult(ip="192.168.1.1", packetLoss=0.0),
     )
 
-    TraceResult.run_test("8.8.8.8", 400)
 
-    assert ping.call_args.args == ("192.168.1.1", TRACE_HOP_PING_COUNT)
+@pytest.mark.parametrize("hop_count", [1, 10, 50, 400])
+def test_run_test_uses_requested_count_for_hops(mocker, hop_count):
+    ping = _patch_trace_with_one_hop(mocker)
+
+    TraceResult.run_test("8.8.8.8", hop_count)
+
+    assert ping.call_args.args == ("192.168.1.1", hop_count)
+
+
+@pytest.mark.parametrize(
+    "uid, expected",
+    [
+        (0, DEFAULT_TRACE_HOP_PING_COUNT_ROOT),
+        (1000, DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT),
+    ],
+)
+def test_run_test_hop_count_defaults_by_uid(mocker, uid, expected):
+    ping = _patch_trace_with_one_hop(mocker)
+    mocker.patch("os.geteuid", return_value=uid)
+
+    TraceResult.run_test("8.8.8.8")
+
+    assert ping.call_args.args == ("192.168.1.1", expected)
 
 
 def test_run_test_no_trace(mocker):

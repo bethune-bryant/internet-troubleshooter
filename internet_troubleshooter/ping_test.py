@@ -8,6 +8,17 @@ PACKET_LOSS_REGEX = re.compile(r"([\d.]+)%\s+packet\s+loss")
 
 PING_TIMEOUT = 120
 
+DEFAULT_PING_COUNT_ROOT = 400
+DEFAULT_PING_COUNT_NON_ROOT = 10
+
+
+def default_ping_count_for_uid(root_count, non_root_count):
+    """Packet count to use when none was requested.
+
+    Only root may flood ping, so a much larger sample is affordable there.
+    """
+    return root_count if os.geteuid() == 0 else non_root_count
+
 
 @dataclass
 class PingResult:
@@ -41,7 +52,9 @@ class PingResult:
         uid = os.geteuid()
 
         if count is None:
-            count = 400 if uid == 0 else 10
+            count = default_ping_count_for_uid(
+                DEFAULT_PING_COUNT_ROOT, DEFAULT_PING_COUNT_NON_ROOT
+            )
 
         if uid == 0:
             command = ["ping", "-f", "-q", "-c", str(count), ip]

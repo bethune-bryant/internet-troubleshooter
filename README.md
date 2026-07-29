@@ -78,6 +78,7 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | `--debug` | global | off | Print progress and the raw output of each command to stderr. |
 | `--ping_ip` | `run` | `8.8.8.8` | IP address or hostname to test against. Must be a valid address or hostname. |
 | `--ping_count` | `run` | 400 as root, else 10 | Number of packets to send to the target. Must be at least 1. |
+| `--trace_hop_ping_count` | `run` | 50 as root, else 10 | Number of packets to send to each traceroute hop. Must be at least 1. |
 | `--max_packet_loss` | `run` | `3.0` | Packet loss percent above which a traceroute is run. |
 | `--skip_speedtest` | `run` | off | Skip the Speedtest CLI test. |
 | `--skip_pingtest` | `run` | off | Skip the ping test. This also skips the traceroute, since the traceroute is triggered by the ping result. |
@@ -89,14 +90,16 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 
 The traceroute is diagnostic and is only run when something looks wrong. After the ping test, a traceroute runs if either the ping test failed outright or the measured packet loss is greater than `--max_packet_loss`. Set it to `0` to traceroute on any loss at all, or pass `--skip_pingtest` to never traceroute.
 
-Each intermediate hop found by the traceroute is then pinged as well. The target address itself is skipped, since the primary ping test already covers it, and repeated addresses are only pinged once — a single router commonly answers for several consecutive hops. Hops are pinged with a much smaller sample than the target (at most 3 packets) so that a long trace does not multiply the runtime of the whole check.
+Each intermediate hop found by the traceroute is then pinged as well. The target address itself is skipped, since the primary ping test already covers it, and repeated addresses are only pinged once — a single router commonly answers for several consecutive hops.
+
+The hop sample size is set by `--trace_hop_ping_count` and is independent of `--ping_count`. Its default is smaller than the target's so that a long trace does not multiply the runtime of the whole check: 50 packets per hop as root, or 10 otherwise. Root still floods (`ping -f`) for hops, so 50 packets per hop stays fast. Pass the flag explicitly to use the same count for every hop regardless of user, for example `checkinternet run --ping_count 400 --trace_hop_ping_count 100`.
 
 ## Exit Codes
 
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. This includes runs where a test was skipped, such as when the `speedtest` CLI is not installed. |
-| 1 | `--ping_ip` is not a valid address or hostname; `--ping_count` is less than 1; the results file could not be written or read; or every test that was attempted failed. |
+| 1 | `--ping_ip` is not a valid address or hostname; `--ping_count` or `--trace_hop_ping_count` is less than 1; the results file could not be written or read; or every test that was attempted failed. |
 | 2 | The command line itself could not be parsed, for example a missing subcommand or an unknown flag. |
 
 ## Tracking and Displaying Statistics
