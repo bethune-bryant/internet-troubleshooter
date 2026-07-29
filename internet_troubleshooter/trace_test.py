@@ -48,21 +48,21 @@ def default_hop_ping_count():
 
 @dataclass
 class TraceResult:
-    pingResults: List[PingResult]
+    ping_results: List[PingResult]
 
     def to_dict(self):
         return {
-            "pingResults": [
-                None if ping is None else ping.to_dict() for ping in self.pingResults
+            "ping_results": [
+                None if ping is None else ping.to_dict() for ping in self.ping_results
             ]
         }
 
     @classmethod
     def from_dict(cls, data):
         return cls(
-            pingResults=[
+            ping_results=[
                 None if ping is None else PingResult.from_dict(ping)
-                for ping in data.get("pingResults") or []
+                for ping in data.get("ping_results") or []
             ]
         )
 
@@ -111,4 +111,4 @@ class TraceResult:
             trace_ping_result = PingResult.run_test(trace_ip, hop_count)
             if trace_ping_result is not None:
                 trace_ping_results.append(trace_ping_result)
-        return TraceResult(pingResults=trace_ping_results)
+        return TraceResult(ping_results=trace_ping_results)

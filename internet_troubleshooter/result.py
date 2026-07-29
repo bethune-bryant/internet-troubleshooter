@@ -26,63 +26,65 @@ def trace_name(label, values):
 
 @dataclass
 class TestResult:
-    pingResult: PingResult
-    traceResult: TraceResult
-    speedResult: SpeedResult
-    timeStamp: float = field(default_factory=time)
+    ping_result: PingResult
+    trace_result: TraceResult
+    speed_result: SpeedResult
+    time_stamp: float = field(default_factory=time)
 
     def human_readable(self, io_target=sys.stdout):
-        if self.pingResult is not None:
+        if self.ping_result is not None:
             print(
-                "Packet Loss: {:.2f}%".format(self.pingResult.packetLoss),
+                "Packet Loss: {:.2f}%".format(self.ping_result.packet_loss),
                 file=io_target,
             )
 
-        if self.traceResult is not None:
-            for trace_result in self.traceResult.pingResults:
-                if trace_result is None:
+        if self.trace_result is not None:
+            for hop_result in self.trace_result.ping_results:
+                if hop_result is None:
                     continue
                 print(
-                    "{:.2f}% {}".format(trace_result.packetLoss, trace_result.ip),
+                    "{:.2f}% {}".format(hop_result.packet_loss, hop_result.ip),
                     file=io_target,
                 )
 
-        if self.speedResult is not None:
+        if self.speed_result is not None:
             print(
-                self.speedResult,
+                self.speed_result,
                 file=io_target,
             )
 
     def to_dict(self):
         return {
-            "pingResult": (
-                None if self.pingResult is None else self.pingResult.to_dict()
+            "ping_result": (
+                None if self.ping_result is None else self.ping_result.to_dict()
             ),
-            "traceResult": (
-                None if self.traceResult is None else self.traceResult.to_dict()
+            "trace_result": (
+                None if self.trace_result is None else self.trace_result.to_dict()
             ),
-            "speedResult": (
-                None if self.speedResult is None else self.speedResult.to_dict()
+            "speed_result": (
+                None if self.speed_result is None else self.speed_result.to_dict()
             ),
-            "timeStamp": self.timeStamp,
+            "time_stamp": self.time_stamp,
         }
 
     @classmethod
     def from_dict(cls, data):
-        pingResult = data.get("pingResult")
-        traceResult = data.get("traceResult")
-        speedResult = data.get("speedResult")
-        timeStamp = data.get("timeStamp")
+        ping_result = data.get("ping_result")
+        trace_result = data.get("trace_result")
+        speed_result = data.get("speed_result")
+        time_stamp = data.get("time_stamp")
 
         return cls(
-            pingResult=None if pingResult is None else PingResult.from_dict(pingResult),
-            traceResult=(
-                None if traceResult is None else TraceResult.from_dict(traceResult)
+            ping_result=(
+                None if ping_result is None else PingResult.from_dict(ping_result)
             ),
-            speedResult=(
-                None if speedResult is None else SpeedResult.from_dict(speedResult)
+            trace_result=(
+                None if trace_result is None else TraceResult.from_dict(trace_result)
             ),
-            **({} if timeStamp is None else {"timeStamp": float(timeStamp)}),
+            speed_result=(
+                None if speed_result is None else SpeedResult.from_dict(speed_result)
+            ),
+            **({} if time_stamp is None else {"time_stamp": float(time_stamp)}),
         )
 
     def to_yaml(self):
@@ -105,15 +107,15 @@ class TestResult:
             return TestResult.load_yaml(f.read())
 
     def get_date(self):
-        return datetime.fromtimestamp(self.timeStamp)
+        return datetime.fromtimestamp(self.time_stamp)
 
     @staticmethod
     def to_human(results, io_target=sys.stdout):
-        speedResults = [result.speedResult for result in results]
-        pingResults = [result.pingResult for result in results]
+        speed_results = [result.speed_result for result in results]
+        ping_results = [result.ping_result for result in results]
         print(
             "{}\n\n{}".format(
-                SpeedResult.summarize(speedResults), PingResult.summarize(pingResults)
+                SpeedResult.summarize(speed_results), PingResult.summarize(ping_results)
             ),
             file=io_target,
         )
@@ -130,9 +132,11 @@ class TestResult:
                 "or 'pip install plotly'."
             ) from e
 
-        results = sorted(results, key=lambda x: x.timeStamp)
+        results = sorted(results, key=lambda x: x.time_stamp)
 
-        xs = [result.get_date() for result in results if result.speedResult is not None]
+        xs = [
+            result.get_date() for result in results if result.speed_result is not None
+        ]
 
         fig = make_subplots(
             shared_xaxes=True,
@@ -142,9 +146,9 @@ class TestResult:
         )
 
         download = [
-            result.speedResult.download
+            result.speed_result.download
             for result in results
-            if result.speedResult is not None
+            if result.speed_result is not None
         ]
         fig.add_trace(
             go.Scatter(x=xs, y=download, name=trace_name("Download", download)),
@@ -163,9 +167,9 @@ class TestResult:
         )
 
         upload = [
-            result.speedResult.upload
+            result.speed_result.upload
             for result in results
-            if result.speedResult is not None
+            if result.speed_result is not None
         ]
         fig.add_trace(
             go.Scatter(x=xs, y=upload, name=trace_name("Upload", upload)),
@@ -184,9 +188,9 @@ class TestResult:
         )
 
         latency = [
-            result.speedResult.latency
+            result.speed_result.latency
             for result in results
-            if result.speedResult is not None
+            if result.speed_result is not None
         ]
         fig.add_trace(
             go.Scatter(x=xs, y=latency, name=trace_name("Latency", latency)),
@@ -209,18 +213,18 @@ class TestResult:
             title_text="Latency(ms)", rangemode="tozero", secondary_y=True, row=1, col=1
         )
 
-        xs = [result.get_date() for result in results if result.pingResult is not None]
+        xs = [result.get_date() for result in results if result.ping_result is not None]
 
-        packetLoss = [
-            result.pingResult.packetLoss
+        packet_loss = [
+            result.ping_result.packet_loss
             for result in results
-            if result.pingResult is not None
+            if result.ping_result is not None
         ]
         fig.add_trace(
             go.Scatter(
                 x=xs,
-                y=packetLoss,
-                name=trace_name("Packet Loss", packetLoss),
+                y=packet_loss,
+                name=trace_name("Packet Loss", packet_loss),
             ),
             row=2,
             col=1,
@@ -245,7 +249,7 @@ class TestResult:
         )
 
         for result in results:
-            if result.speedResult is None or result.pingResult is None:
+            if result.speed_result is None or result.ping_result is None:
                 fig.add_vline(
                     x=result.get_date(), line_dash="dot", line_color="red", row=1, col=1
                 )
@@ -253,19 +257,21 @@ class TestResult:
                     x=result.get_date(), line_dash="dot", line_color="red", row=2, col=1
                 )
 
-        traceResults = [result for result in results if result.traceResult is not None]
+        trace_results = [
+            result for result in results if result.trace_result is not None
+        ]
 
         fig.add_trace(
             go.Table(
                 header=dict(
-                    values=[result.get_date() for result in traceResults],
+                    values=[result.get_date() for result in trace_results],
                     font=dict(size=10),
                     align="left",
                 ),
                 cells=dict(
                     values=[
-                        [str(ping) for ping in result.traceResult.pingResults]
-                        for result in traceResults
+                        [str(ping) for ping in result.trace_result.ping_results]
+                        for result in trace_results
                     ],
                     align="left",
                 ),

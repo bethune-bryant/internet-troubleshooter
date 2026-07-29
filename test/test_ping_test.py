@@ -3,17 +3,17 @@ from internet_troubleshooter.ping_test import PingResult
 
 
 def test_PingResult():
-    x = PingResult(ip="1.1.1.1", packetLoss=10)
+    x = PingResult(ip="1.1.1.1", packet_loss=10)
     assert x.ip == "1.1.1.1"
-    assert x.packetLoss == 10
+    assert x.packet_loss == 10
     assert str(x) == "10.00%: 1.1.1.1"
 
 
 def test_summarize():
     x = [
-        PingResult(ip="1.1.1.1", packetLoss=10),
-        PingResult(ip="1.1.1.2", packetLoss=15),
-        PingResult(ip="1.1.1.3", packetLoss=20),
+        PingResult(ip="1.1.1.1", packet_loss=10),
+        PingResult(ip="1.1.1.2", packet_loss=15),
+        PingResult(ip="1.1.1.3", packet_loss=20),
     ]
     summary = PingResult.summarize(x)
     assert "Packet Loss:" in summary
@@ -32,7 +32,7 @@ rtt min/avg/max/mdev = 16.544/20.312/35.193/2.061 ms, pipe 3, ipg/ewma 16.690/20
 
     x = PingResult.parse_result("google.com", test_output)
     assert x.ip == "google.com"
-    assert x.packetLoss == 12.34
+    assert x.packet_loss == 12.34
 
 
 def test_parseResultBad():

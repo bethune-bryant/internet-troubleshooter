@@ -47,9 +47,9 @@ def test_parse_trace_line_no_ip(line):
 
 
 def test_TraceResult():
-    x = TraceResult([PingResult(ip="1.1.1.1", packetLoss=10)])
-    assert x.pingResults[0].ip == "1.1.1.1"
-    assert x.pingResults[0].packetLoss == 10
+    x = TraceResult([PingResult(ip="1.1.1.1", packet_loss=10)])
+    assert x.ping_results[0].ip == "1.1.1.1"
+    assert x.ping_results[0].packet_loss == 10
 
 
 def test_execute_test(mocker, capsys):
@@ -95,12 +95,12 @@ def test_run_test_skips_failed_hops(mocker):
     )
     mocker.patch(
         "internet_troubleshooter.trace_test.PingResult.run_test",
-        side_effect=[PingResult(ip="192.168.1.1", packetLoss=0.0), None],
+        side_effect=[PingResult(ip="192.168.1.1", packet_loss=0.0), None],
     )
 
     x = TraceResult.run_test("8.8.8.8")
-    assert len(x.pingResults) == 1
-    assert x.pingResults[0].ip == "192.168.1.1"
+    assert len(x.ping_results) == 1
+    assert x.ping_results[0].ip == "192.168.1.1"
 
 
 def test_run_test_deduplicates_hop_ips(mocker):
@@ -122,12 +122,12 @@ def test_run_test_deduplicates_hop_ips(mocker):
     )
     ping = mocker.patch(
         "internet_troubleshooter.trace_test.PingResult.run_test",
-        side_effect=lambda ip, hop_count=None: PingResult(ip=ip, packetLoss=0.0),
+        side_effect=lambda ip, hop_count=None: PingResult(ip=ip, packet_loss=0.0),
     )
 
     x = TraceResult.run_test("8.8.8.8")
 
-    assert [result.ip for result in x.pingResults] == ["192.168.1.1", "10.0.0.1"]
+    assert [result.ip for result in x.ping_results] == ["192.168.1.1", "10.0.0.1"]
     assert [call.args[0] for call in ping.call_args_list] == [
         "192.168.1.1",
         "10.0.0.1",
@@ -183,7 +183,7 @@ def test_run_test_debug_logging(mocker, capsys, caplog):
     )
     mocker.patch(
         "internet_troubleshooter.trace_test.PingResult.run_test",
-        return_value=PingResult(ip="192.168.1.1", packetLoss=0.0),
+        return_value=PingResult(ip="192.168.1.1", packet_loss=0.0),
     )
 
     with caplog.at_level(logging.DEBUG):
@@ -221,7 +221,7 @@ def _patch_trace_with_one_hop(mocker):
     )
     return mocker.patch(
         "internet_troubleshooter.trace_test.PingResult.run_test",
-        return_value=PingResult(ip="192.168.1.1", packetLoss=0.0),
+        return_value=PingResult(ip="192.168.1.1", packet_loss=0.0),
     )
 
 

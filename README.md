@@ -142,7 +142,26 @@ HTML output requires the `html` extra; without it `display --format html` fails 
 
 ### Result Log Format
 
-Each run appends one YAML document to the file, so the same file can be reused indefinitely. Results are written as plain dictionaries with `camelCase` keys using safe YAML, and are read back with a safe loader, so a results file can never execute code when it is loaded. Only this dictionary format is supported; a file containing anything else, such as the `!!python/object` tags emitted by very old versions, fails to load.
+Each run appends one YAML document to the file, so the same file can be reused indefinitely. Results are written as plain dictionaries with `snake_case` keys using safe YAML, and are read back with a safe loader, so a results file can never execute code when it is loaded. Only this dictionary format is supported; a file containing the `!!python/object` tags emitted by very old versions fails to load.
+
+Versions before the `snake_case` rename wrote `camelCase` keys such as `pingResult` and `packetLoss`. Those keys are no longer recognized and there is no dual-read path: an old file still parses as YAML, but every measurement in it reads back as missing. Start a new results file, or rename the keys in the old one, rather than mixing the two formats.
+
+A single document looks like this. Keys are sorted alphabetically, and any test that did not run is written as `null` — so `trace_result` is `null` unless a traceroute was triggered:
+
+```yaml
+ping_result:
+  ip: 8.8.8.8
+  packet_loss: 1.5
+speed_result:
+  download: 58.54
+  latency: 19.27
+  upload: 17.12
+time_stamp: 1700000000.0
+trace_result:
+  ping_results:
+  - ip: 10.0.0.1
+    packet_loss: 0.0
+```
 
 ## Automatic Checking
 

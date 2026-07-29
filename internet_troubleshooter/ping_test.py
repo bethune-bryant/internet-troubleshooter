@@ -23,29 +23,29 @@ def default_ping_count_for_uid(root_count, non_root_count):
 @dataclass
 class PingResult:
     ip: str
-    packetLoss: float
+    packet_loss: float
 
     def __str__(self):
-        return "{:.2f}%: {}".format(self.packetLoss, self.ip)
+        return "{:.2f}%: {}".format(self.packet_loss, self.ip)
 
     def to_dict(self):
-        return {"ip": self.ip, "packetLoss": self.packetLoss}
+        return {"ip": self.ip, "packet_loss": self.packet_loss}
 
     @classmethod
     def from_dict(cls, data):
-        return cls(ip=data["ip"], packetLoss=float(data["packetLoss"]))
+        return cls(ip=data["ip"], packet_loss=float(data["packet_loss"]))
 
     @staticmethod
     def parse_result(ip, result):
         packet_loss_match = PACKET_LOSS_REGEX.search(result)
         if packet_loss_match is None:
             return None
-        return PingResult(ip=ip, packetLoss=float(packet_loss_match.group(1)))
+        return PingResult(ip=ip, packet_loss=float(packet_loss_match.group(1)))
 
     @staticmethod
     def summarize(results):
-        packetLoss = [result.packetLoss for result in results if result is not None]
-        return summarize(packetLoss, "Packet Loss", "%")
+        packet_loss = [result.packet_loss for result in results if result is not None]
+        return summarize(packet_loss, "Packet Loss", "%")
 
     @staticmethod
     def execute_test(ip, count=None):

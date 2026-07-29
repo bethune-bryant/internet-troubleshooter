@@ -12,26 +12,26 @@ from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.trace_test import TraceResult
 
 
-def make_result(timeStamp, packetLoss=None):
-    pingResult = None
-    if packetLoss is not None:
-        pingResult = PingResult(ip="8.8.8.8", packetLoss=packetLoss)
+def make_result(time_stamp, packet_loss=None):
+    ping_result = None
+    if packet_loss is not None:
+        ping_result = PingResult(ip="8.8.8.8", packet_loss=packet_loss)
     return InternetTestResult(
-        pingResult=pingResult,
-        traceResult=None,
-        speedResult=None,
-        timeStamp=timeStamp,
+        ping_result=ping_result,
+        trace_result=None,
+        speed_result=None,
+        time_stamp=time_stamp,
     )
 
 
-def make_full_result(timeStamp=1700000000.0):
+def make_full_result(time_stamp=1700000000.0):
     return InternetTestResult(
-        pingResult=PingResult(ip="8.8.8.8", packetLoss=1.5),
-        traceResult=TraceResult(
-            pingResults=[PingResult(ip="10.0.0.1", packetLoss=0.0), None]
+        ping_result=PingResult(ip="8.8.8.8", packet_loss=1.5),
+        trace_result=TraceResult(
+            ping_results=[PingResult(ip="10.0.0.1", packet_loss=0.0), None]
         ),
-        speedResult=SpeedResult(upload=17.1212, download=58.542856, latency=19.266),
-        timeStamp=timeStamp,
+        speed_result=SpeedResult(upload=17.1212, download=58.542856, latency=19.266),
+        time_stamp=time_stamp,
     )
 
 
@@ -42,20 +42,20 @@ def write_results(path, results):
 
 
 def test_timestamp_is_per_instance():
-    first = InternetTestResult(pingResult=None, traceResult=None, speedResult=None)
+    first = InternetTestResult(ping_result=None, trace_result=None, speed_result=None)
     sleep(0.01)
-    second = InternetTestResult(pingResult=None, traceResult=None, speedResult=None)
-    assert first.timeStamp != second.timeStamp
-    assert first.timeStamp < second.timeStamp
+    second = InternetTestResult(ping_result=None, trace_result=None, speed_result=None)
+    assert first.time_stamp != second.time_stamp
+    assert first.time_stamp < second.time_stamp
 
 
 def test_human_readable_skips_missing_hops():
     result = InternetTestResult(
-        pingResult=PingResult(ip="8.8.8.8", packetLoss=5.0),
-        traceResult=TraceResult(
-            pingResults=[None, PingResult(ip="10.0.0.1", packetLoss=1.5), None]
+        ping_result=PingResult(ip="8.8.8.8", packet_loss=5.0),
+        trace_result=TraceResult(
+            ping_results=[None, PingResult(ip="10.0.0.1", packet_loss=1.5), None]
         ),
-        speedResult=None,
+        speed_result=None,
     )
 
     output = io.StringIO()
@@ -76,11 +76,11 @@ def test_to_html_with_no_data():
     output = io.StringIO()
     InternetTestResult.to_html(results, output)
     assert "Internet Status" in output.getvalue()
-    assert [result.timeStamp for result in results] == [2.0, 1.0]
+    assert [result.time_stamp for result in results] == [2.0, 1.0]
 
 
 def test_to_html_with_data():
-    results = [make_result(2.0, packetLoss=10.0), make_result(1.0, packetLoss=0.0)]
+    results = [make_result(2.0, packet_loss=10.0), make_result(1.0, packet_loss=0.0)]
 
     output = io.StringIO()
     InternetTestResult.to_html(results, output)
@@ -88,7 +88,7 @@ def test_to_html_with_data():
 
 
 def test_to_human():
-    results = [make_result(1.0, packetLoss=10.0), make_result(2.0, packetLoss=20.0)]
+    results = [make_result(1.0, packet_loss=10.0), make_result(2.0, packet_loss=20.0)]
 
     output = io.StringIO()
     InternetTestResult.to_human(results, output)
@@ -97,15 +97,15 @@ def test_to_human():
     assert "Download: Not enough data." in text
 
 
-def test_to_dict_uses_camel_case_keys():
+def test_to_dict_uses_snake_case_keys():
     data = make_full_result().to_dict()
 
-    assert sorted(data) == ["pingResult", "speedResult", "timeStamp", "traceResult"]
-    assert data["pingResult"] == {"ip": "8.8.8.8", "packetLoss": 1.5}
-    assert data["traceResult"] == {
-        "pingResults": [{"ip": "10.0.0.1", "packetLoss": 0.0}, None]
+    assert sorted(data) == ["ping_result", "speed_result", "time_stamp", "trace_result"]
+    assert data["ping_result"] == {"ip": "8.8.8.8", "packet_loss": 1.5}
+    assert data["trace_result"] == {
+        "ping_results": [{"ip": "10.0.0.1", "packet_loss": 0.0}, None]
     }
-    assert data["speedResult"] == {
+    assert data["speed_result"] == {
         "upload": 17.1212,
         "download": 58.542856,
         "latency": 19.266,
@@ -119,13 +119,13 @@ def test_from_dict_round_trip():
 
 def test_from_dict_without_timestamp_uses_now():
     data = make_full_result().to_dict()
-    del data["timeStamp"]
+    del data["time_stamp"]
 
-    assert InternetTestResult.from_dict(data).timeStamp > 1700000000.0
+    assert InternetTestResult.from_dict(data).time_stamp > 1700000000.0
 
 
 def test_from_dict_with_empty_result():
-    result = InternetTestResult.from_dict({"timeStamp": 1.0})
+    result = InternetTestResult.from_dict({"time_stamp": 1.0})
     assert result == make_result(1.0)
 
 
@@ -151,17 +151,17 @@ def test_yaml_round_trip_appends(tmp_path):
     write_results(yaml_file, [make_full_result(1700000060.0)])
 
     loaded = InternetTestResult.load_results(str(yaml_file))
-    assert [result.timeStamp for result in loaded] == [1700000000.0, 1700000060.0]
+    assert [result.time_stamp for result in loaded] == [1700000000.0, 1700000060.0]
 
 
 def test_load_results_reads_utf8(tmp_path):
     yaml_file = tmp_path / "results.yaml"
-    result = make_result(1.0, packetLoss=1.0)
-    result.pingResult.ip = "rout\u00e9r.local"
+    result = make_result(1.0, packet_loss=1.0)
+    result.ping_result.ip = "rout\u00e9r.local"
     write_results(yaml_file, [result])
 
     loaded = InternetTestResult.load_results(str(yaml_file))
-    assert loaded[0].pingResult.ip == "rout\u00e9r.local"
+    assert loaded[0].ping_result.ip == "rout\u00e9r.local"
 
 
 def test_load_results_skips_empty_documents(tmp_path):
@@ -190,4 +190,4 @@ def test_load_yaml_rejects_python_object_tags():
 
 def test_load_yaml_rejects_malformed_yaml():
     with pytest.raises(yaml.YAMLError):
-        InternetTestResult.load_yaml("pingResult: [unclosed")
+        InternetTestResult.load_yaml("ping_result: [unclosed")
