@@ -23,6 +23,23 @@ HOP_NUMERIC_IP_REGEX = re.compile(
 
 TRACE_TIMEOUT = 120
 
+TRACEROUTE = "traceroute"
+
+# Debian and Ubuntu package two unrelated traceroute implementations: the
+# classic one, which takes -n to skip reverse lookups, and the inetutils one,
+# which reports numeric addresses by default and whose packaged version rejects
+# -n outright. The help text is the cheapest way to tell them apart.
+NUMERIC_HELP_TIMEOUT = 5
+NUMERIC_HELP_REGEX = re.compile(r"(?:^|\s)(?:-n|--numeric)(?![\w-])", re.MULTILINE)
+NUMERIC_REJECTED_REGEX = re.compile(
+    r"(?:invalid|unrecognized|unknown)\s+option.*\b(?:n|numeric)\b",
+    re.IGNORECASE,
+)
+
+# True when -n is accepted, False when it is not, and None while unprobed or
+# when traceroute could not be run at all.
+_numeric_supported = None
+
 # Hops are only pinged to locate where loss is introduced, so they default to a
 # smaller sample than the primary target: a trace of 20 hops would otherwise
 # take 20 times as long as the primary test. Root can afford a larger sample
@@ -37,6 +54,72 @@ def parse_trace_line(line):
     if match is None:
         return None
     return match.group(1)
+
+
+def _probe_numeric_support():
+    """Ask traceroute for its help text and look for -n in it.
+
+    Returns None when traceroute could not be run, in which case run_command has
+    already reported why.
+    """
+    help_result = run_command([TRACEROUTE, "--help"], timeout=NUMERIC_HELP_TIMEOUT)
+    if help_result is None:
+        return None
+    help_text = "{}\n{}".format(help_result.stdout or "", help_result.stderr or "")
+    return NUMERIC_HELP_REGEX.search(help_text) is not None
+
+
+def _cache_numeric_support(supported):
+    global _numeric_supported
+    _numeric_supported = supported
+
+
+def _traceroute_supports_numeric():
+    """Whether the installed traceroute accepts -n, probing at most once.
+
+    Which traceroute is installed cannot change while the process runs, and a
+    trace pings every hop it finds, so the answer is cached.
+    """
+    if _numeric_supported is None:
+        _cache_numeric_support(_probe_numeric_support())
+        logger.debug("traceroute -n supported: %s", _numeric_supported)
+    return _numeric_supported
+
+
+def _traceroute_command(ip):
+    """The traceroute invocation for ip, using -n only where it is supported."""
+    if _traceroute_supports_numeric():
+        return [TRACEROUTE, "-n", ip]
+    return [TRACEROUTE, ip]
+
+
+def _numeric_option_rejected(result):
+    """True when traceroute failed because it does not know the -n option."""
+    return (
+        result.returncode != 0
+        and NUMERIC_REJECTED_REGEX.search(result.stderr or "") is not None
+    )
+
+
+def _run_traceroute(ip):
+    """Trace to ip, retrying without -n if the binary turns out to reject it.
+
+    The help text and the binary that ends up running can disagree, so a
+    rejected -n overrides the probe rather than failing the trace.
+    """
+    if _traceroute_supports_numeric() is None:
+        return None
+
+    command = _traceroute_command(ip)
+    logger.debug("Traceroute command: %s", command)
+    result = run_command(command, timeout=TRACE_TIMEOUT)
+    if result is None or "-n" not in command or not _numeric_option_rejected(result):
+        return result
+
+    _cache_numeric_support(False)
+    retry = _traceroute_command(ip)
+    logger.debug("traceroute rejected -n, retrying as: %s", retry)
+    return run_command(retry, timeout=TRACE_TIMEOUT)
 
 
 def default_hop_ping_count():
@@ -68,7 +151,7 @@ class TraceResult:
 
     @staticmethod
     def execute_test(ip):
-        trace_result = run_command(["traceroute", "-n", ip], timeout=TRACE_TIMEOUT)
+        trace_result = _run_traceroute(ip)
         if trace_result is None:
             return None
         if trace_result.returncode != 0:
