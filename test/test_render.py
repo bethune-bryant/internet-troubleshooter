@@ -6,15 +6,17 @@ import pytest
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.render import (
     PLOT_PACKET_LOSS_PCT,
+    RenderThresholds,
+    _aligned_series,
     _build_trace_tables_html,
     _format_summary_stats,
+    _hover_texts,
     _metric_status,
     _packet_loss_axis_max,
     _ping_target,
     _trace_rows,
     to_html,
     to_human,
-    trace_name,
 )
 from internet_troubleshooter.result import TestResult as InternetTestResult
 from internet_troubleshooter.speed_test import SpeedResult
@@ -53,15 +55,10 @@ def make_result(time_stamp, packet_loss=None, speed=None, hops=None, ip="8.8.8.8
     )
 
 
-def render(results):
+def render(results, thresholds=None):
     output = io.StringIO()
-    to_html(results, output)
+    to_html(results, output, thresholds)
     return output.getvalue()
-
-
-def test_trace_name():
-    assert trace_name("Download", [1.0, 2.0]) == "Download (avg: 1.50)"
-    assert trace_name("Download", []) == "Download"
 
 
 def test_to_html_with_no_data():
@@ -75,10 +72,16 @@ def test_to_html_with_no_data():
     assert [result.time_stamp for result in results] == [2.0, 1.0]
 
 
-def test_to_html_with_data():
-    results = [make_result(2.0, packet_loss=10.0), make_result(1.0, packet_loss=0.0)]
+def test_to_html_plot_legends_name_the_metric_without_the_average():
+    results = [
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
+        make_result(2.0, packet_loss=10.0, speed=(60.0, 10.0, 30.0)),
+    ]
 
-    assert "Packet Loss (avg: 5.00)" in render(results)
+    text = render(results)
+    for label in ("Download", "Upload", "Latency", "Packet Loss"):
+        assert '"name":"{}"'.format(label) in text
+    assert "(avg:" not in text
 
 
 def test_to_html_uses_a_dark_theme():
@@ -107,10 +110,111 @@ def test_to_html_summary_cards_report_mean_min_and_max():
     )
     assert "<dd>60.00Mbps</dd>" in text
     assert "<dd>80.00Mbps</dd>" in text
-    assert "<dd>2</dd>" in text
     assert "Target &ge; 50Mbps" in text
     assert '<span class="chip">Target 8.8.8.8</span>' in text
     assert '<span class="chip">2 run(s)</span>' in text
+
+
+def test_to_html_summary_cards_omit_the_sample_count():
+    results = [make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0))]
+
+    text = render(results)
+    assert "<dt>Samples</dt>" not in text
+    assert "<dt>Min</dt>" in text
+    assert "<dt>Max</dt>" in text
+    # The count is still available to callers that want it.
+    assert _format_summary_stats(results)["metrics"][0]["samples"] == 1
+
+
+def test_to_html_charts_split_speed_latency_and_loss_across_three_rows():
+    results = [
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
+        make_result(2.0, packet_loss=4.0, speed=(60.0, 10.0, 30.0)),
+    ]
+
+    text = render(results)
+    assert '"title":{"text":"Internet Speed(Mbps)"}' in text
+    assert '"title":{"text":"Latency(ms)"}' in text
+    assert '"title":{"text":"% Packet Loss"}' in text
+    # Latency sits on the second row and packet loss on the third, so there is
+    # no secondary y axis and no fourth row.
+    assert '"yaxis":"y2"' in text
+    assert '"yaxis":"y3"' in text
+    assert '"yaxis":"y4"' not in text
+    assert '"yaxis4"' not in text
+
+
+def test_to_html_charts_hover_reports_every_metric_for_the_run():
+    results = [
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
+        make_result(2.0, packet_loss=4.0),
+    ]
+
+    text = render(results)
+    assert '"hovermode":"x unified"' in text
+    assert '"connectgaps":false' in text
+    assert (
+        "Download: 80.00 Mbps\\u003cbr\\u003eUpload: 20.00 Mbps"
+        "\\u003cbr\\u003eLatency: 10.00 ms\\u003cbr\\u003ePacket loss: 0.00%"
+    ) in text
+    # The run without a speed test still hovers, reporting what it does have.
+    assert "Download: no data\\u003cbr\\u003e" in text
+
+
+def test_hover_texts_list_every_metric_per_run():
+    texts = _hover_texts([80.0, None], [20.0, None], [10.0, None], [0.0, 5.0])
+
+    assert texts[0] == (
+        "Download: 80.00 Mbps<br>Upload: 20.00 Mbps<br>"
+        "Latency: 10.00 ms<br>Packet loss: 0.00%"
+    )
+    assert texts[1] == (
+        "Download: no data<br>Upload: no data<br>"
+        "Latency: no data<br>Packet loss: 5.00%"
+    )
+
+
+def test_aligned_series_pads_runs_that_skipped_a_test():
+    results = [
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
+        make_result(2.0, packet_loss=4.0),
+        make_result(3.0, speed=(60.0, 10.0, 30.0)),
+    ]
+
+    dates, download, upload, latency, packet_loss = _aligned_series(results)
+    # Every metric is aligned to the same three run times.
+    assert len(dates) == 3
+    assert download == [80.0, None, 60.0]
+    assert upload == [20.0, None, 10.0]
+    assert latency == [10.0, None, 30.0]
+    assert packet_loss == [0.0, 4.0, None]
+
+
+def test_to_html_honors_custom_thresholds():
+    thresholds = RenderThresholds(
+        download_mbps=200,
+        upload_mbps=100,
+        latency_ms=5,
+        packet_loss_pct=0.5,
+    )
+    results = [
+        make_result(
+            1.0,
+            packet_loss=1.0,
+            speed=(80.0, 20.0, 10.0),
+            hops=[("10.0.0.1", 1.0)],
+        )
+    ]
+
+    text = render(results, thresholds)
+    assert "Target &ge; 200Mbps" in text
+    assert "Target &le; 5ms" in text
+    assert "Target &le; 0.5%" in text
+    assert "download &ge; 200Mbps" in text
+    assert "packet loss &le; 0.5%" in text
+    # Every measurement is healthy by default but misses these targets.
+    assert '<article class="card card--good">' not in text
+    assert '<span class="loss loss--bad">1.00%</span>' in text
 
 
 def test_to_html_summary_flags_healthy_and_unhealthy_metrics():
@@ -218,6 +322,9 @@ def test_packet_loss_axis_max():
     assert _packet_loss_axis_max([1.0, 2.0]) == 6
     assert _packet_loss_axis_max([40.0]) == 46.0
     assert _packet_loss_axis_max([99.0]) == 100
+    # Runs without a ping test are padded with None and do not set the peak.
+    assert _packet_loss_axis_max([None, 40.0, None]) == 46.0
+    assert _packet_loss_axis_max([1.0], RenderThresholds(packet_loss_pct=20)) == 40
 
 
 def test_metric_status():

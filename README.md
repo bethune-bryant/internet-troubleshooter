@@ -87,6 +87,10 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | `--yaml_file` | `run` | none | Append this run's results to the given file. Without it, results are printed but not recorded. |
 | `--yaml_file` | `display` | required | File of logged results to read. |
 | `--format` | `display` | `human` | `human` for a text summary or `html` for an interactive plot. Both are written to stdout. |
+| `--target_download_mbps` | `display` | `50` | Download speed the HTML report treats as healthy. |
+| `--target_upload_mbps` | `display` | `15` | Upload speed the HTML report treats as healthy. |
+| `--target_latency_ms` | `display` | `20` | Highest latency the HTML report treats as healthy. |
+| `--target_packet_loss_pct` | `display` | `3` | Highest packet loss the HTML report treats as healthy. |
 
 ### How `--max_packet_loss` gates the traceroute
 
@@ -140,9 +144,23 @@ $ checkinternet display --yaml_file troubleshooting.yaml --format html > trouble
 
 HTML output requires the `html` extra; without it `display --format html` fails with an error stating that plotly is not installed.
 
-The HTML report is a single self-contained dark themed page with three sections: metric cards showing the mean, minimum, and maximum of each measurement against its healthy threshold; interactive speed, latency, and packet loss charts; and a scrollable table of traceroute hops with one column per run, whose addresses and loss figures can be selected and copied.
+The HTML report is a single self-contained dark themed page with three sections: metric cards showing the mean, minimum, and maximum of each measurement against its healthy threshold; three stacked charts sharing one time axis, holding download and upload, latency, and packet loss; and a scrollable table of traceroute hops with one column per run, whose addresses and loss figures can be selected and copied.
+
+Hovering any of the charts reports every metric recorded for that run together, so a latency spike can be read against the speed and packet loss measured at the same moment. Runs where a test did not complete are marked with a dotted red line and report the metrics they are missing as `no data`.
 
 ![HTML Plot](docs/DiplayHTML.PNG)
+
+### Choosing the Healthy Thresholds
+
+The thresholds the report considers healthy set the dashed reference lines on the charts, decide whether each metric card reads as good or bad, color the per-hop loss figures in the traceroute table, and are restated in the page footer. They default to the values of a typical broadband plan and can be pointed at your own with four `display` flags:
+
+```shell
+$ checkinternet display --yaml_file troubleshooting.yaml --format html \
+    --target_download_mbps 500 --target_upload_mbps 100 \
+    --target_latency_ms 15 --target_packet_loss_pct 0.5 > troubleshooting.html
+```
+
+The flags only affect the HTML report; `--format human` prints the same summary regardless.
 
 ### Result Log Format
 

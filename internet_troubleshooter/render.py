@@ -1,6 +1,7 @@
 """Rendering of collected results into human readable and HTML reports."""
 
 import sys
+from dataclasses import dataclass
 from html import escape
 
 from internet_troubleshooter.ping_test import PingResult
@@ -27,16 +28,33 @@ COLOR_LATENCY = "#fbbf24"
 COLOR_LOSS = "#f472b6"
 COLOR_BAD = "#f87171"
 
-CHART_HEIGHT = 620
+CHART_HEIGHT = 780
 
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 MISSING_VALUE = "&mdash;"
 
+# Plotly hover labels are plain text, so a missing measurement is spelled out
+# rather than using the em dash entity the cards and tables use.
+HOVER_MISSING = "no data"
+
 # Packet loss is plotted on its own axis; a fixed 0-100 range hides the small
 # values that matter, so the axis is only stretched as far as the data needs.
 MIN_PACKET_LOSS_RANGE = 5
 PACKET_LOSS_HEADROOM = 1.15
+
+
+@dataclass(frozen=True)
+class RenderThresholds:
+    """The values this report treats as a healthy connection."""
+
+    download_mbps: float = PLOT_DOWNLOAD_MBPS
+    upload_mbps: float = PLOT_UPLOAD_MBPS
+    latency_ms: float = PLOT_LATENCY_MS
+    packet_loss_pct: float = PLOT_PACKET_LOSS_PCT
+
+
+DEFAULT_THRESHOLDS = RenderThresholds()
 
 PAGE_CSS = """
 :root {
@@ -139,7 +157,7 @@ table.trace tbody tr:hover td { background: rgba(56, 189, 248, 0.07); }
 .loss--bad { color: var(--bad); }
 .cell--missing { color: #4b5364; }
 .empty { margin: 0; color: var(--muted); font-style: italic; }
-.chart { min-height: 620px; }
+.chart { min-height: 780px; }
 .footnote { margin: 0; color: var(--muted); font-size: 0.78rem; }
 ::selection { background: rgba(56, 189, 248, 0.35); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -186,13 +204,6 @@ where a test did not complete.</p>
 """
 
 
-def trace_name(label, values):
-    average = safe_mean(values)
-    if average is None:
-        return label
-    return "{} (avg: {:.2f})".format(label, average)
-
-
 def to_human(results, io_target=sys.stdout):
     speed_results = [result.speed_result for result in results]
     ping_results = [result.ping_result for result in results]
@@ -218,41 +229,77 @@ def _import_plotly():
     return go, make_subplots
 
 
-def _speed_series(results):
-    """Dates and download/upload/latency values for runs that measured speed."""
-    measured = [result for result in results if result.speed_result is not None]
-    return (
-        [result.get_date() for result in measured],
-        [result.speed_result.download for result in measured],
-        [result.speed_result.upload for result in measured],
-        [result.speed_result.latency for result in measured],
-    )
+def _aligned_series(results):
+    """Every run's date, with one value list per metric aligned to it.
+
+    All the traces share this x axis so that hovering a run reports each of its
+    metrics together; a run that skipped or failed a test carries None.
+    """
+    dates = [result.get_date() for result in results]
+    download = []
+    upload = []
+    latency = []
+    packet_loss = []
+    for result in results:
+        speed = result.speed_result
+        download.append(None if speed is None else speed.download)
+        upload.append(None if speed is None else speed.upload)
+        latency.append(None if speed is None else speed.latency)
+        ping = result.ping_result
+        packet_loss.append(None if ping is None else ping.packet_loss)
+    return dates, download, upload, latency, packet_loss
 
 
-def _packet_loss_series(results):
-    """Dates and packet loss values for runs that completed a ping test."""
-    measured = [result for result in results if result.ping_result is not None]
-    return (
-        [result.get_date() for result in measured],
-        [result.ping_result.packet_loss for result in measured],
-    )
+def _measured(values):
+    """The values that were actually recorded, dropping the missing ones."""
+    return [value for value in values if value is not None]
 
 
-def _packet_loss_axis_max(values):
+def _format_threshold(value):
+    """A threshold as written in labels, without a pointless trailing zero."""
+    return "{:g}".format(value)
+
+
+def _hover_value(value, unit):
+    if value is None:
+        return HOVER_MISSING
+    return "{:.2f}{}".format(value, unit)
+
+
+def _hover_texts(download, upload, latency, packet_loss):
+    """One hover block per run, listing all four metrics for that run.
+
+    A unified hover only covers the traces of the subplot being hovered, so
+    every trace carries the whole block and any chart reports the full run.
+    """
+    return [
+        "Download: {}<br>Upload: {}<br>Latency: {}<br>Packet loss: {}".format(
+            _hover_value(run_download, " Mbps"),
+            _hover_value(run_upload, " Mbps"),
+            _hover_value(run_latency, " ms"),
+            _hover_value(run_loss, "%"),
+        )
+        for run_download, run_upload, run_latency, run_loss in zip(
+            download, upload, latency, packet_loss
+        )
+    ]
+
+
+def _packet_loss_axis_max(values, thresholds=DEFAULT_THRESHOLDS):
     """Upper bound for the packet loss axis, always showing the threshold."""
-    peak = max(values) if values else 0
+    measured = _measured(values)
+    peak = max(measured) if measured else 0
     return min(
         100,
         max(
             MIN_PACKET_LOSS_RANGE,
-            PLOT_PACKET_LOSS_PCT * 2,
+            thresholds.packet_loss_pct * 2,
             peak * PACKET_LOSS_HEADROOM,
         ),
     )
 
 
-def _add_threshold_line(fig, value, label, row, position, secondary_y=None):
-    extra = {} if secondary_y is None else {"secondary_y": secondary_y}
+def _add_threshold_line(fig, value, label, row, position):
     fig.add_hline(
         y=value,
         annotation_text=label,
@@ -264,108 +311,106 @@ def _add_threshold_line(fig, value, label, row, position, secondary_y=None):
         line_width=1,
         row=row,
         col=1,
-        **extra,
     )
 
 
-def _add_speed_chart(fig, go, results):
-    """Download, upload, and latency on the first row of the figure."""
-    xs, download, upload, latency = _speed_series(results)
+def _add_metric_trace(fig, go, row, xs, values, label, color, hover_texts, **extra):
+    """One metric line, hovering as the full run when hover_texts is given."""
+    if hover_texts is None:
+        hover = dict(hoverinfo="skip")
+    else:
+        hover = dict(text=hover_texts, hovertemplate="%{text}<extra></extra>")
+    fig.add_trace(
+        go.Scatter(
+            x=xs,
+            y=values,
+            name=label,
+            mode="lines+markers",
+            line=dict(color=color, width=2),
+            marker=dict(size=5),
+            connectgaps=False,
+            **hover,
+            **extra,
+        ),
+        row=row,
+        col=1,
+    )
 
-    for values, label, color, secondary_y in (
-        (download, "Download", COLOR_DOWNLOAD, False),
-        (upload, "Upload", COLOR_UPLOAD, False),
-        (latency, "Latency", COLOR_LATENCY, True),
-    ):
-        fig.add_trace(
-            go.Scatter(
-                x=xs,
-                y=values,
-                name=trace_name(label, values),
-                mode="lines+markers",
-                line=dict(color=color, width=2),
-                marker=dict(size=5),
-            ),
-            secondary_y=secondary_y,
-            row=1,
-            col=1,
-        )
+
+def _add_speed_chart(fig, go, xs, download, upload, hover_texts, thresholds):
+    """Download and upload, sharing the Mbps axis on the first row."""
+    _add_metric_trace(fig, go, 1, xs, download, "Download", COLOR_DOWNLOAD, hover_texts)
+    # Download already carries the hover block for this row, and repeating it
+    # for upload would print every metric twice in the unified hover.
+    _add_metric_trace(fig, go, 1, xs, upload, "Upload", COLOR_UPLOAD, None)
 
     _add_threshold_line(
         fig,
-        PLOT_DOWNLOAD_MBPS,
-        "{}Mbps".format(PLOT_DOWNLOAD_MBPS),
+        thresholds.download_mbps,
+        "{}Mbps".format(_format_threshold(thresholds.download_mbps)),
         1,
         "top left",
-        secondary_y=False,
     )
     _add_threshold_line(
         fig,
-        PLOT_UPLOAD_MBPS,
-        "{}Mbps".format(PLOT_UPLOAD_MBPS),
+        thresholds.upload_mbps,
+        "{}Mbps".format(_format_threshold(thresholds.upload_mbps)),
         1,
         "bottom left",
-        secondary_y=False,
-    )
-    _add_threshold_line(
-        fig,
-        PLOT_LATENCY_MS,
-        "{}ms".format(PLOT_LATENCY_MS),
-        1,
-        "top right",
-        secondary_y=True,
     )
 
     fig.update_yaxes(
         title_text="Internet Speed(Mbps)",
         rangemode="tozero",
-        secondary_y=False,
-        row=1,
-        col=1,
-    )
-    fig.update_yaxes(
-        title_text="Latency(ms)",
-        rangemode="tozero",
-        showgrid=False,
-        secondary_y=True,
         row=1,
         col=1,
     )
 
 
-def _add_packet_loss_chart(fig, go, results):
-    """Packet loss against the primary ping target on the second row."""
-    xs, packet_loss = _packet_loss_series(results)
-
-    fig.add_trace(
-        go.Scatter(
-            x=xs,
-            y=packet_loss,
-            name=trace_name("Packet Loss", packet_loss),
-            mode="lines+markers",
-            line=dict(color=COLOR_LOSS, width=2),
-            marker=dict(size=5),
-            fill="tozeroy",
-            fillcolor="rgba(244, 114, 182, 0.12)",
-        ),
-        row=2,
-        col=1,
-    )
+def _add_latency_chart(fig, go, xs, latency, hover_texts, thresholds):
+    """Latency on its own row, where the Mbps scale cannot flatten it."""
+    _add_metric_trace(fig, go, 2, xs, latency, "Latency", COLOR_LATENCY, hover_texts)
 
     _add_threshold_line(
         fig,
-        PLOT_PACKET_LOSS_PCT,
-        "{}%".format(PLOT_PACKET_LOSS_PCT),
+        thresholds.latency_ms,
+        "{}ms".format(_format_threshold(thresholds.latency_ms)),
         2,
         "top right",
     )
 
-    fig.update_xaxes(title_text="Test Time", row=2, col=1)
+    fig.update_yaxes(title_text="Latency(ms)", rangemode="tozero", row=2, col=1)
+
+
+def _add_packet_loss_chart(fig, go, xs, packet_loss, hover_texts, thresholds):
+    """Packet loss against the primary ping target on the third row."""
+    _add_metric_trace(
+        fig,
+        go,
+        3,
+        xs,
+        packet_loss,
+        "Packet Loss",
+        COLOR_LOSS,
+        hover_texts,
+        fill="tozeroy",
+        fillcolor="rgba(244, 114, 182, 0.12)",
+    )
+
+    _add_threshold_line(
+        fig,
+        thresholds.packet_loss_pct,
+        "{}%".format(_format_threshold(thresholds.packet_loss_pct)),
+        3,
+        "top right",
+    )
+
+    fig.update_xaxes(title_text="Test Time", row=3, col=1)
     fig.update_yaxes(
         title_text="% Packet Loss",
         rangemode="tozero",
-        range=[0, _packet_loss_axis_max(packet_loss)],
-        row=2,
+        range=[0, _packet_loss_axis_max(packet_loss, thresholds)],
+        row=3,
         col=1,
     )
 
@@ -375,7 +420,7 @@ def _add_incomplete_run_markers(fig, results):
     for result in results:
         if result.speed_result is not None and result.ping_result is not None:
             continue
-        for row in (1, 2):
+        for row in (1, 2, 3):
             fig.add_vline(
                 x=result.get_date(),
                 line_dash="dot",
@@ -386,21 +431,24 @@ def _add_incomplete_run_markers(fig, results):
             )
 
 
-def _build_charts_figure(results):
-    """Dark themed figure with the speed/latency and packet loss charts."""
+def _build_charts_figure(results, thresholds=DEFAULT_THRESHOLDS):
+    """Dark themed figure with the speed, latency, and packet loss charts."""
     go, make_subplots = _import_plotly()
+
+    dates, download, upload, latency, packet_loss = _aligned_series(results)
+    hover_texts = _hover_texts(download, upload, latency, packet_loss)
 
     fig = make_subplots(
         shared_xaxes=True,
-        rows=2,
+        rows=3,
         cols=1,
-        row_heights=[0.62, 0.38],
-        vertical_spacing=0.08,
-        specs=[[{"secondary_y": True}], [dict()]],
+        row_heights=[0.4, 0.3, 0.3],
+        vertical_spacing=0.06,
     )
 
-    _add_speed_chart(fig, go, results)
-    _add_packet_loss_chart(fig, go, results)
+    _add_speed_chart(fig, go, dates, download, upload, hover_texts, thresholds)
+    _add_latency_chart(fig, go, dates, latency, hover_texts, thresholds)
+    _add_packet_loss_chart(fig, go, dates, packet_loss, hover_texts, thresholds)
     _add_incomplete_run_markers(fig, results)
 
     fig.update_layout(
@@ -460,13 +508,12 @@ def _ping_target(results):
     return None
 
 
-def _format_summary_stats(results):
+def _format_summary_stats(results, thresholds=DEFAULT_THRESHOLDS):
     """Mean/min/max per metric plus run counts, for the summary cards.
 
     Expects results sorted by time stamp so the reported range is correct.
     """
-    _, download, upload, latency = _speed_series(results)
-    _, packet_loss = _packet_loss_series(results)
+    _, download, upload, latency, packet_loss = _aligned_series(results)
 
     incomplete = [
         result
@@ -476,10 +523,22 @@ def _format_summary_stats(results):
 
     return {
         "metrics": [
-            _metric_stats("Download", "Mbps", download, PLOT_DOWNLOAD_MBPS, True),
-            _metric_stats("Upload", "Mbps", upload, PLOT_UPLOAD_MBPS, True),
-            _metric_stats("Latency", "ms", latency, PLOT_LATENCY_MS, False),
-            _metric_stats("Packet Loss", "%", packet_loss, PLOT_PACKET_LOSS_PCT, False),
+            _metric_stats(
+                "Download", "Mbps", _measured(download), thresholds.download_mbps, True
+            ),
+            _metric_stats(
+                "Upload", "Mbps", _measured(upload), thresholds.upload_mbps, True
+            ),
+            _metric_stats(
+                "Latency", "ms", _measured(latency), thresholds.latency_ms, False
+            ),
+            _metric_stats(
+                "Packet Loss",
+                "%",
+                _measured(packet_loss),
+                thresholds.packet_loss_pct,
+                False,
+            ),
         ],
         "runs": len(results),
         "incomplete": len(incomplete),
@@ -525,7 +584,6 @@ def _metric_card_html(metric):
         '<dl class="card__stats">'
         "<div><dt>Min</dt><dd>{minimum}</dd></div>"
         "<div><dt>Max</dt><dd>{maximum}</dd></div>"
-        "<div><dt>Samples</dt><dd>{samples}</dd></div>"
         "</dl>"
         '<p class="card__note">Target {comparison} {threshold}{unit}</p>'
         "</article>"
@@ -536,9 +594,8 @@ def _metric_card_html(metric):
         unit=escape(metric["unit"]),
         minimum=_format_measurement(metric["minimum"], metric["unit"]),
         maximum=_format_measurement(metric["maximum"], metric["unit"]),
-        samples=metric["samples"],
         comparison=comparison,
-        threshold=metric["threshold"],
+        threshold=_format_threshold(metric["threshold"]),
     )
 
 
@@ -585,10 +642,11 @@ def _trace_rows(trace_results):
     return rows
 
 
-def _trace_cell_html(ping):
+def _trace_cell_html(ping, thresholds=DEFAULT_THRESHOLDS):
     if ping is None:
         return '<td class="cell--missing">{}</td>'.format(MISSING_VALUE)
-    loss_class = "loss loss--bad" if ping.packet_loss > PLOT_PACKET_LOSS_PCT else "loss"
+    bad = ping.packet_loss > thresholds.packet_loss_pct
+    loss_class = "loss loss--bad" if bad else "loss"
     # The space between the spans keeps the cell readable once it is copied,
     # where the margin between them is lost.
     return (
@@ -601,14 +659,15 @@ def _trace_cell_html(ping):
     )
 
 
-def _trace_table_html(trace_results):
+def _trace_table_html(trace_results, thresholds=DEFAULT_THRESHOLDS):
     header = "".join(
         '<th scope="col">{}</th>'.format(escape(_format_run_time(result)))
         for result in trace_results
     )
     rows = "".join(
         '<tr><th scope="row" class="col-hop">{}</th>{}</tr>'.format(
-            hop_number, "".join(_trace_cell_html(ping) for ping in pings)
+            hop_number,
+            "".join(_trace_cell_html(ping, thresholds) for ping in pings),
         )
         for hop_number, pings in _trace_rows(trace_results)
     )
@@ -622,7 +681,7 @@ def _trace_table_html(trace_results):
     ).format(header=header, rows=rows)
 
 
-def _build_trace_tables_html(results):
+def _build_trace_tables_html(results, thresholds=DEFAULT_THRESHOLDS):
     """Scrollable, selectable table of traceroute hops, one column per run."""
     trace_results = [result for result in results if result.trace_result is not None]
 
@@ -644,12 +703,12 @@ def _build_trace_tables_html(results):
         "traces",
         "Traceroute Hops",
         _chips_html(chips),
-        _trace_table_html(trace_results),
+        _trace_table_html(trace_results, thresholds),
     )
 
 
-def _build_charts_html(results):
-    fig = _build_charts_figure(results)
+def _build_charts_html(results, thresholds=DEFAULT_THRESHOLDS):
+    fig = _build_charts_figure(results, thresholds)
     return fig.to_html(
         full_html=False,
         include_plotlyjs="cdn",
@@ -657,7 +716,9 @@ def _build_charts_html(results):
     )
 
 
-def _assemble_html_document(charts_html, summary_html, trace_html):
+def _assemble_html_document(
+    charts_html, summary_html, trace_html, thresholds=DEFAULT_THRESHOLDS
+):
     charts_panel = _panel_html(
         "charts",
         "Performance Over Time",
@@ -669,10 +730,10 @@ def _assemble_html_document(charts_html, summary_html, trace_html):
         summary=summary_html,
         charts=charts_panel,
         traces=trace_html,
-        download=PLOT_DOWNLOAD_MBPS,
-        upload=PLOT_UPLOAD_MBPS,
-        latency=PLOT_LATENCY_MS,
-        loss=PLOT_PACKET_LOSS_PCT,
+        download=_format_threshold(thresholds.download_mbps),
+        upload=_format_threshold(thresholds.upload_mbps),
+        latency=_format_threshold(thresholds.latency_ms),
+        loss=_format_threshold(thresholds.packet_loss_pct),
     )
 
 
@@ -684,13 +745,15 @@ def _write_html(document, io_target):
         target.write(document)
 
 
-def to_html(results, io_target=sys.stdout):
+def to_html(results, io_target=sys.stdout, thresholds=None):
+    thresholds = DEFAULT_THRESHOLDS if thresholds is None else thresholds
     results = sorted(results, key=lambda x: x.time_stamp)
 
     document = _assemble_html_document(
-        _build_charts_html(results),
-        _build_summary_html(_format_summary_stats(results)),
-        _build_trace_tables_html(results),
+        _build_charts_html(results, thresholds),
+        _build_summary_html(_format_summary_stats(results, thresholds)),
+        _build_trace_tables_html(results, thresholds),
+        thresholds,
     )
 
     _write_html(document, io_target)
