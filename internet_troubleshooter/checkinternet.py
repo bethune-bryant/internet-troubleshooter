@@ -7,6 +7,7 @@ import sys
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult, default_hop_ping_count
 from internet_troubleshooter.speed_test import SpeedResult
+from internet_troubleshooter.render import to_html, to_human
 from internet_troubleshooter.result import TestResult
 from internet_troubleshooter.utils import configure_logging, is_valid_host
 
@@ -227,9 +228,9 @@ def display(args):
         return 1
 
     if args.format == "html":
-        TestResult.to_html(results, sys.stdout)
+        to_html(results, sys.stdout)
     else:
-        TestResult.to_human(results, sys.stdout)
+        to_human(results, sys.stdout)
 
     return 0
 
