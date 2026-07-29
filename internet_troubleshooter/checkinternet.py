@@ -5,7 +5,7 @@ from datetime import datetime
 import sys
 
 from internet_troubleshooter.ping_test import PingResult
-from internet_troubleshooter.trace_test import TraceResult
+from internet_troubleshooter.trace_test import TraceResult, default_hop_ping_count
 from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.result import TestResult
 from internet_troubleshooter.utils import configure_logging, is_valid_host
@@ -35,6 +35,13 @@ def cli_input():
         default=None,
         type=int,
         help="Packets to send. (default: 400 as root, otherwise 10)",
+    )
+    run_cmd.add_argument(
+        "--trace_hop_ping_count",
+        default=None,
+        type=int,
+        help="Packets to send to each traceroute hop. "
+        "(default: 50 as root, otherwise 10)",
     )
     run_cmd.add_argument(
         "--max_packet_loss",
@@ -101,6 +108,24 @@ def _validate_ping_count(count):
     return False
 
 
+def _validate_trace_hop_ping_count(count):
+    if count is None or count >= 1:
+        return True
+    print(
+        "ERROR: Invalid --trace_hop_ping_count value '{}', "
+        "expected a positive number of packets.".format(count),
+        file=sys.stderr,
+    )
+    return False
+
+
+def _resolve_trace_hop_ping_count(count):
+    """Hop packet count to use, filling in the root-aware default if unset."""
+    if count is None:
+        return default_hop_ping_count()
+    return count
+
+
 def _run_ping_tests(args, test_result):
     if args.skip_pingtest:
         return 0, 0
@@ -120,7 +145,8 @@ def _run_ping_tests(args, test_result):
         or test_result.pingResult.packetLoss > args.max_packet_loss
     ):
         logger.debug("Running TraceTest")
-        test_result.traceResult = TraceResult.run_test(args.ping_ip, args.ping_count)
+        hop_count = _resolve_trace_hop_ping_count(args.trace_hop_ping_count)
+        test_result.traceResult = TraceResult.run_test(args.ping_ip, hop_count)
 
     return attempted, succeeded
 
@@ -165,6 +191,9 @@ def run(args):
         return 1
 
     if not _validate_ping_count(args.ping_count):
+        return 1
+
+    if not _validate_trace_hop_ping_count(args.trace_hop_ping_count):
         return 1
 
     logger.debug("Running Tests")

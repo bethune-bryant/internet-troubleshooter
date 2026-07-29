@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass
 from typing import List
 
-from internet_troubleshooter.ping_test import PingResult
+from internet_troubleshooter.ping_test import PingResult, default_ping_count_for_uid
 from internet_troubleshooter.utils import run_command
 
 logger = logging.getLogger(__name__)
@@ -23,11 +23,12 @@ HOP_NUMERIC_IP_REGEX = re.compile(
 
 TRACE_TIMEOUT = 120
 
-# Hops are only pinged to locate where loss is introduced, so they use a much
-# smaller sample than the primary target, which may flood ping for hundreds of
-# packets. A trace of 20 hops would otherwise take 20 times as long as the
-# primary test.
-TRACE_HOP_PING_COUNT = 3
+# Hops are only pinged to locate where loss is introduced, so they default to a
+# smaller sample than the primary target: a trace of 20 hops would otherwise
+# take 20 times as long as the primary test. Root can afford a larger sample
+# because it floods.
+DEFAULT_TRACE_HOP_PING_COUNT_ROOT = 50
+DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT = 10
 
 
 def parse_trace_line(line):
@@ -38,11 +39,11 @@ def parse_trace_line(line):
     return match.group(1)
 
 
-def hop_ping_count(count=None):
-    """Number of packets to send to each intermediate hop."""
-    if count is None:
-        return TRACE_HOP_PING_COUNT
-    return min(count, TRACE_HOP_PING_COUNT)
+def default_hop_ping_count():
+    """Packets to send to each hop when --trace_hop_ping_count was not given."""
+    return default_ping_count_for_uid(
+        DEFAULT_TRACE_HOP_PING_COUNT_ROOT, DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT
+    )
 
 
 @dataclass
@@ -96,14 +97,15 @@ class TraceResult:
         return hops
 
     @staticmethod
-    def run_test(ip, count=None):
+    def run_test(ip, hop_count=None):
         logger.debug("Running Traceroute")
         results = TraceResult.execute_test(ip)
         logger.debug("Traceroute: %s", results)
         if results is None:
             return None
 
-        hop_count = hop_ping_count(count)
+        if hop_count is None:
+            hop_count = default_hop_ping_count()
         trace_ping_results = list()
         for trace_ip in TraceResult.hop_ips(results, ip):
             trace_ping_result = PingResult.run_test(trace_ip, hop_count)

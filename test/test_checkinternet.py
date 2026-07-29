@@ -7,6 +7,10 @@ from internet_troubleshooter import checkinternet
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.result import TestResult as InternetTestResult
 from internet_troubleshooter.speed_test import SpeedResult
+from internet_troubleshooter.trace_test import (
+    DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT,
+    DEFAULT_TRACE_HOP_PING_COUNT_ROOT,
+)
 
 
 def make_args(**overrides):
@@ -14,6 +18,7 @@ def make_args(**overrides):
         "debug": False,
         "ping_ip": "8.8.8.8",
         "ping_count": 1,
+        "trace_hop_ping_count": None,
         "max_packet_loss": 3.0,
         "skip_speedtest": True,
         "skip_pingtest": False,
@@ -82,6 +87,85 @@ def test_run_rejects_invalid_ping_count(mocker, capsys, ping_count):
     assert "ERROR:" in captured.err
     assert "--ping_count" in captured.err
     assert not ping.called
+
+
+@pytest.mark.parametrize("trace_hop_ping_count", [0, -1, -50])
+def test_run_rejects_invalid_trace_hop_ping_count(mocker, capsys, trace_hop_ping_count):
+    ping = mocker.patch(
+        "internet_troubleshooter.checkinternet.PingResult.run_test",
+        return_value=None,
+    )
+
+    args = make_args(trace_hop_ping_count=trace_hop_ping_count)
+    assert checkinternet.run(args) == 1
+
+    captured = capsys.readouterr()
+    assert "ERROR:" in captured.err
+    assert "--trace_hop_ping_count" in captured.err
+    assert not ping.called
+
+
+@pytest.mark.parametrize(
+    "uid, expected",
+    [
+        (0, DEFAULT_TRACE_HOP_PING_COUNT_ROOT),
+        (1000, DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT),
+    ],
+)
+def test_run_trace_hop_count_defaults_by_uid(mocker, capsys, uid, expected):
+    mocker.patch("os.geteuid", return_value=uid)
+    trace = run_with_ping(
+        mocker,
+        PingResult(ip="8.8.8.8", packetLoss=50.0),
+        ping_count=400,
+        trace_hop_ping_count=None,
+    )
+    capsys.readouterr()
+
+    assert trace.call_args.args == ("8.8.8.8", expected)
+
+
+def test_run_trace_hop_count_uses_explicit_value(mocker, capsys):
+    mocker.patch("os.geteuid", return_value=0)
+    trace = run_with_ping(
+        mocker,
+        PingResult(ip="8.8.8.8", packetLoss=50.0),
+        ping_count=400,
+        trace_hop_ping_count=7,
+    )
+    capsys.readouterr()
+
+    assert trace.call_args.args == ("8.8.8.8", 7)
+
+
+def test_run_pings_hops_with_hop_count_not_ping_count(mocker, capsys):
+    trace_output = "\n".join(
+        [
+            " 1  192.168.1.1  0.310 ms",
+            " 2  10.0.0.1  1.310 ms",
+            " 3  8.8.8.8  9.310 ms",
+        ]
+    )
+    mocker.patch(
+        "internet_troubleshooter.trace_test.TraceResult.execute_test",
+        return_value=trace_output,
+    )
+    ping = mocker.patch(
+        "internet_troubleshooter.checkinternet.PingResult.run_test",
+        side_effect=lambda ip, count=None: PingResult(
+            ip=ip, packetLoss=50.0 if ip == "8.8.8.8" else 0.0
+        ),
+    )
+
+    args = make_args(ping_count=400, trace_hop_ping_count=25)
+    assert checkinternet.run(args) == 0
+    capsys.readouterr()
+
+    assert [call.args for call in ping.call_args_list] == [
+        ("8.8.8.8", 400),
+        ("192.168.1.1", 25),
+        ("10.0.0.1", 25),
+    ]
 
 
 def test_run_accepts_unset_ping_count(mocker, capsys):
@@ -378,6 +462,8 @@ def test_cli_input_run(mocker):
             "1.1.1.1",
             "--ping_count",
             "5",
+            "--trace_hop_ping_count",
+            "4",
             "--max_packet_loss",
             "10",
             "--skip_speedtest",
@@ -391,6 +477,7 @@ def test_cli_input_run(mocker):
     assert args.command == "run"
     assert args.ping_ip == "1.1.1.1"
     assert args.ping_count == 5
+    assert args.trace_hop_ping_count == 4
     assert args.max_packet_loss == 10.0
     assert args.skip_speedtest
     assert not args.skip_pingtest
