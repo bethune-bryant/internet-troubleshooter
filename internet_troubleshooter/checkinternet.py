@@ -58,6 +58,7 @@ RUN_OPTIONS: Dict[str, Option] = {
 DISPLAY_OPTIONS: Dict[str, Option] = {
     "yaml_file": Option(None, as_str),
     "format": Option("human", as_choice(DISPLAY_FORMATS)),
+    "html_file": Option(None, as_str),
     "embed_plotly": Option(False, as_bool),
     "target_download_mbps": Option(PLOT_DOWNLOAD_MBPS, as_float),
     "target_upload_mbps": Option(PLOT_UPLOAD_MBPS, as_float),
@@ -165,9 +166,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--format",
         default=argparse.SUPPRESS,
         choices=DISPLAY_FORMATS,
-        help="Output format, written to stdout. {}".format(
+        help="Output format, written to stdout unless --html_file names a "
+        "file to write the HTML report to. {}".format(
             _default_note(DISPLAY_OPTIONS, "format")
         ),
+    )
+    display_cmd.add_argument(
+        "--html_file",
+        default=argparse.SUPPRESS,
+        type=str,
+        help="File to write the HTML report to instead of stdout. Only used "
+        "with '--format html'.",
     )
     display_cmd.add_argument(
         "--embed_plotly",
@@ -417,20 +426,51 @@ def _load_display_results(yaml_file: str) -> Optional[List[TestResult]]:
         return None
 
 
-def display(args: argparse.Namespace) -> int:
-    results = _load_display_results(args.yaml_file)
-    if results is None:
-        return 1
-
-    if args.format == "html":
+def _write_html_report(args: argparse.Namespace, results: List[TestResult]) -> int:
+    """Write the report to --html_file, or to stdout when it names no file."""
+    if args.html_file is None:
         to_html(
             results,
             sys.stdout,
             _display_thresholds(args),
             embed_plotly=args.embed_plotly,
         )
-    else:
-        to_human(results, sys.stdout)
+        return 0
+
+    logger.debug("Writing HTML report to: %s", args.html_file)
+    try:
+        to_html(
+            results,
+            args.html_file,
+            _display_thresholds(args),
+            embed_plotly=args.embed_plotly,
+        )
+    except OSError as error:
+        print(
+            "ERROR: Unable to write report to '{}': {}".format(args.html_file, error),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def display(args: argparse.Namespace) -> int:
+    results = _load_display_results(args.yaml_file)
+    if results is None:
+        return 1
+
+    if args.format == "html":
+        return _write_html_report(args, results)
+
+    # The text summary has nowhere to go but stdout, so an html_file left over
+    # from the config file is not worth failing over, only mentioning.
+    if args.html_file is not None:
+        print(
+            "WARNING: Ignoring --html_file '{}', which only applies to "
+            "'--format html'.".format(args.html_file),
+            file=sys.stderr,
+        )
+    to_human(results, sys.stdout)
 
     return 0
 

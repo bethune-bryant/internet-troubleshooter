@@ -23,6 +23,7 @@ SCHEMA = {
     },
     "display": {
         "format": Option("human", as_choice(("human", "html"))),
+        "html_file": Option(None, as_str),
         "embed_plotly": Option(False, as_bool),
     },
 }
@@ -187,6 +188,7 @@ def test_load_config_rejects_an_unknown_option(tmp_path):
         ("run:\n  skip_speedtest: yes please\n", "expected true or false"),
         ("run:\n  skip_speedtest: 1\n", "expected true or false"),
         ("display:\n  format: pdf\n", "expected one of: human, html"),
+        ("display:\n  html_file: 42\n", "expected a string"),
     ],
 )
 def test_load_config_rejects_a_value_of_the_wrong_type(tmp_path, content, expected):

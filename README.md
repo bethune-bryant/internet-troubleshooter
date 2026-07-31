@@ -98,7 +98,8 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | `--skip_pingtest` | `run` | off | Skip the ping test. This also skips the traceroute, since the traceroute is triggered by the ping result. |
 | `--yaml_file` | `run` | none | Append this run's results to the given file. Without it, results are printed but not recorded. |
 | `--yaml_file` | `display` | required | File of logged results to read, or `-` to read them from stdin. Required unless the config file sets it. |
-| `--format` | `display` | `human` | `human` for a text summary or `html` for an interactive plot. Both are written to stdout. |
+| `--format` | `display` | `human` | `human` for a text summary or `html` for an interactive plot. Written to stdout unless `--html_file` names a file. |
+| `--html_file` | `display` | none | Write the HTML report to the given file instead of stdout. Only used with `--format html`; ignored with a warning otherwise. |
 | `--embed_plotly` | `display` | off | Inline plotly.js in the HTML report so it opens without network access, instead of loading it from the plotly CDN. |
 | `--target_download_mbps` | `display` | `50` | Download speed the HTML report treats as healthy. |
 | `--target_upload_mbps` | `display` | `15` | Upload speed the HTML report treats as healthy. |
@@ -146,6 +147,7 @@ run:
 display:
   yaml_file: /var/log/internet-troubleshooter/results.yaml
   format: html
+  html_file: /var/www/html/troubleshooting.html
   embed_plotly: true
   target_download_mbps: 500
   target_upload_mbps: 100
@@ -195,7 +197,7 @@ ERROR: Config file 'config.yaml' sets 'ping_count' in section 'run' to 'many', e
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. This includes runs where a test was skipped, such as when the `speedtest` CLI is not installed. |
-| 1 | `--ping_ip` is not a valid address or hostname; `--ping_count` or `--trace_hop_ping_count` is less than 1; the results file could not be written or read; or every test that was attempted failed. |
+| 1 | `--ping_ip` is not a valid address or hostname; `--ping_count` or `--trace_hop_ping_count` is less than 1; the results file could not be written or read; the HTML report named by `--html_file` could not be written; or every test that was attempted failed. |
 | 2 | The command line itself could not be parsed, for example a missing subcommand or an unknown flag; or the [config file](#configuration-file) could not be read or understood. |
 
 ## Tracking and Displaying Statistics
@@ -235,8 +237,18 @@ Ping RTT:
   Variance: 2.06ms
   Min: 16.54ms
   Max: 35.19ms
-$ checkinternet display --yaml_file troubleshooting.yaml --format html > troubleshooting.html
+$ checkinternet display --yaml_file troubleshooting.yaml --format html \
+    --html_file troubleshooting.html
 ```
+
+`--html_file` writes the report to the named file and leaves stdout empty, which
+keeps a scheduled report from depending on a shell redirect and reports a
+directory that cannot be written to as an error rather than an empty file.
+Leaving it off writes the HTML to stdout as before, so
+`--format html > troubleshooting.html` still works. It only applies to
+`--format html`: with `--format human` the text summary goes to stdout and a
+warning about the ignored `--html_file` goes to stderr, which matters mostly
+when the config file sets both and one run overrides the format.
 
 `Ping RTT` summarizes each run's average round trip time, over the runs that recorded one; a run whose ping reported no round trip time is left out of it, and a file of results logged before round trip times were recorded reports `Not enough data`.
 
@@ -267,7 +279,7 @@ By default the page loads plotly.js from the plotly CDN, which keeps the file sm
 
 ```shell
 $ checkinternet display --yaml_file troubleshooting.yaml --format html \
-    --embed_plotly > troubleshooting.html
+    --embed_plotly --html_file troubleshooting.html
 ```
 
 The result is fully self-contained and renders offline, at the cost of roughly 5MB of inlined JavaScript in every report. Use the default when the report is viewed on a connected machine, and `--embed_plotly` when it is archived, emailed, or opened somewhere without internet access. Everything else about the page is identical.
@@ -278,8 +290,9 @@ The thresholds the report considers healthy set the dashed reference lines on th
 
 ```shell
 $ checkinternet display --yaml_file troubleshooting.yaml --format html \
+    --html_file troubleshooting.html \
     --target_download_mbps 500 --target_upload_mbps 100 \
-    --target_latency_ms 15 --target_packet_loss_pct 0.5 > troubleshooting.html
+    --target_latency_ms 15 --target_packet_loss_pct 0.5
 ```
 
 The flags only affect the HTML report; `--format human` prints the same summary regardless.
@@ -398,18 +411,22 @@ run:
 display:
   yaml_file: /home/USER/troubleshooting.yaml
   format: html
+  html_file: /home/USER/troubleshooting.html
   embed_plotly: true
 ```
 
 The crontab entry then names no options at all, and the same file is picked up
-when the report is generated by hand:
+when the report is generated by hand. Because the config file also names where
+the report goes, refreshing it needs no redirect and nothing has to know the
+path twice:
 
 ```bash
 0 0-7 * * * source /home/USER/git/internet-troubleshooter/my_env/bin/activate && checkinternet --debug run >> /home/USER/troubleshooting.log 2>&1
+5 0-7 * * * source /home/USER/git/internet-troubleshooter/my_env/bin/activate && checkinternet display >> /home/USER/troubleshooting.log 2>&1
 ```
 
 ```shell
-$ checkinternet display > /home/USER/troubleshooting.html
+$ checkinternet display
 ```
 
 For a systemd timer, point `--config` at a file of its own so the unit does not

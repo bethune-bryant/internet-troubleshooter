@@ -422,7 +422,7 @@ def test_display_human(tmp_path, capsys):
             )
             print("---\n{}\n...\n".format(result.to_yaml()), file=f)
 
-    args = Namespace(yaml_file=str(yaml_file), format="human")
+    args = Namespace(yaml_file=str(yaml_file), format="human", html_file=None)
     assert checkinternet.display(args) == 0
 
     captured = capsys.readouterr()
@@ -444,6 +444,7 @@ def test_display_html(mocker, tmp_path, capsys):
     args = Namespace(
         yaml_file=str(yaml_file),
         format="html",
+        html_file=None,
         embed_plotly=False,
         target_download_mbps=100.0,
         target_upload_mbps=50.0,
@@ -477,6 +478,7 @@ def test_display_html_embeds_plotly_when_asked(mocker, tmp_path, capsys):
     args = Namespace(
         yaml_file=str(yaml_file),
         format="html",
+        html_file=None,
         embed_plotly=True,
         target_download_mbps=50.0,
         target_upload_mbps=15.0,
@@ -489,8 +491,84 @@ def test_display_html_embeds_plotly_when_asked(mocker, tmp_path, capsys):
     capsys.readouterr()
 
 
+def display_html_args(yaml_file, html_file):
+    return Namespace(
+        yaml_file=str(yaml_file),
+        format="html",
+        html_file=html_file,
+        embed_plotly=False,
+        target_download_mbps=50.0,
+        target_upload_mbps=15.0,
+        target_latency_ms=20.0,
+        target_packet_loss_pct=3.0,
+    )
+
+
+def test_display_html_writes_the_report_to_html_file(tmp_path, capsys):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(results_yaml(1.0), encoding="utf-8")
+    html_file = tmp_path / "report.html"
+
+    assert checkinternet.display(display_html_args(yaml_file, str(html_file))) == 0
+
+    assert html_file.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+    assert capsys.readouterr().out == ""
+
+
+def test_display_html_file_takes_precedence_over_stdout(mocker, tmp_path, capsys):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(results_yaml(1.0), encoding="utf-8")
+    to_html = mocker.patch("internet_troubleshooter.checkinternet.to_html")
+    html_file = str(tmp_path / "report.html")
+
+    assert checkinternet.display(display_html_args(yaml_file, html_file)) == 0
+
+    assert to_html.call_args.args[1] == html_file
+    assert capsys.readouterr().out == ""
+
+
+def test_display_reports_unwritable_html_file(tmp_path, capsys):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(results_yaml(1.0), encoding="utf-8")
+    html_file = tmp_path / "missing" / "report.html"
+
+    assert checkinternet.display(display_html_args(yaml_file, str(html_file))) == 1
+
+    captured = capsys.readouterr()
+    assert "ERROR: Unable to write report to" in captured.err
+    assert captured.out == ""
+
+
+def test_display_html_file_logs_its_destination(tmp_path, capsys, caplog):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(results_yaml(1.0), encoding="utf-8")
+    html_file = tmp_path / "report.html"
+
+    with caplog.at_level(logging.DEBUG):
+        assert checkinternet.display(display_html_args(yaml_file, str(html_file))) == 0
+
+    capsys.readouterr()
+    assert "Writing HTML report to: {}".format(html_file) in caplog.text
+
+
+def test_display_human_warns_about_html_file_and_still_summarizes(tmp_path, capsys):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(results_yaml(10.0, 20.0), encoding="utf-8")
+    html_file = tmp_path / "report.html"
+
+    args = Namespace(yaml_file=str(yaml_file), format="human", html_file=str(html_file))
+    assert checkinternet.display(args) == 0
+
+    captured = capsys.readouterr()
+    assert "Mean: 15.00%" in captured.out
+    assert "WARNING: Ignoring --html_file" in captured.err
+    assert not html_file.exists()
+
+
 def test_display_reports_missing_file(tmp_path, capsys):
-    args = Namespace(yaml_file=str(tmp_path / "missing.yaml"), format="human")
+    args = Namespace(
+        yaml_file=str(tmp_path / "missing.yaml"), format="human", html_file=None
+    )
     assert checkinternet.display(args) == 1
     assert "ERROR: Unable to read results" in capsys.readouterr().err
 
@@ -510,7 +588,7 @@ def results_yaml(*packet_losses):
 def test_display_human_from_stdin(mocker, capsys):
     mocker.patch("sys.stdin", io.StringIO(results_yaml(10.0, 20.0)))
 
-    args = Namespace(yaml_file="-", format="human")
+    args = Namespace(yaml_file="-", format="human", html_file=None)
     assert checkinternet.display(args) == 0
 
     captured = capsys.readouterr()
@@ -525,6 +603,7 @@ def test_display_html_from_stdin(mocker, capsys):
     args = Namespace(
         yaml_file="-",
         format="html",
+        html_file=None,
         embed_plotly=False,
         target_download_mbps=50.0,
         target_upload_mbps=15.0,
@@ -541,7 +620,7 @@ def test_display_html_from_stdin(mocker, capsys):
 def test_display_reports_empty_stdin(mocker, capsys, content):
     mocker.patch("sys.stdin", io.StringIO(content))
 
-    args = Namespace(yaml_file="-", format="human")
+    args = Namespace(yaml_file="-", format="human", html_file=None)
     assert checkinternet.display(args) == 1
 
     captured = capsys.readouterr()
@@ -555,7 +634,7 @@ def test_display_does_not_read_stdin_for_a_file(mocker, tmp_path, capsys):
     piped = results_yaml(90.0)
     stdin = mocker.patch("sys.stdin", io.StringIO(piped))
 
-    args = Namespace(yaml_file=str(yaml_file), format="human")
+    args = Namespace(yaml_file=str(yaml_file), format="human", html_file=None)
     assert checkinternet.display(args) == 0
 
     assert "Mean: 15.00%" in capsys.readouterr().out
@@ -602,6 +681,7 @@ def test_cli_input_display_defaults(mocker):
     args = checkinternet.cli_input()
     assert args.command == "display"
     assert args.format == "human"
+    assert args.html_file is None
     assert args.embed_plotly is False
     assert args.target_download_mbps == 50
     assert args.target_upload_mbps == 15
@@ -665,6 +745,25 @@ def test_cli_input_display_accepts_embed_plotly(mocker):
 
     args = checkinternet.cli_input()
     assert args.embed_plotly is True
+
+
+def test_cli_input_display_accepts_html_file(mocker):
+    mocker.patch(
+        "sys.argv",
+        [
+            "checkinternet",
+            "display",
+            "--yaml_file",
+            "in.yaml",
+            "--format",
+            "html",
+            "--html_file",
+            "report.html",
+        ],
+    )
+
+    args = checkinternet.cli_input()
+    assert args.html_file == "report.html"
 
 
 def test_cli_input_requires_command(mocker, capsys):
@@ -781,6 +880,7 @@ def test_cli_input_display_takes_defaults_from_config(mocker, tmp_path):
         "display:\n"
         "  yaml_file: /var/log/results.yaml\n"
         "  format: html\n"
+        "  html_file: /var/www/report.html\n"
         "  embed_plotly: true\n"
         "  target_download_mbps: 500\n"
         "  target_upload_mbps: 100\n"
@@ -791,6 +891,7 @@ def test_cli_input_display_takes_defaults_from_config(mocker, tmp_path):
     args = cli_input_with_config(mocker, config_path, "display")
     assert args.yaml_file == "/var/log/results.yaml"
     assert args.format == "html"
+    assert args.html_file == "/var/www/report.html"
     assert args.embed_plotly is True
     assert checkinternet._display_thresholds(args) == RenderThresholds(
         download_mbps=500.0,
@@ -807,6 +908,7 @@ def test_cli_input_display_flags_override_config(mocker, tmp_path):
         "display:\n"
         "  yaml_file: /var/log/results.yaml\n"
         "  format: html\n"
+        "  html_file: /var/www/report.html\n"
         "  target_download_mbps: 500\n",
     )
 
@@ -818,9 +920,12 @@ def test_cli_input_display_flags_override_config(mocker, tmp_path):
         "-",
         "--format",
         "human",
+        "--html_file",
+        "cli.html",
     )
     assert args.yaml_file == "-"
     assert args.format == "human"
+    assert args.html_file == "cli.html"
     assert args.target_download_mbps == 500.0
 
 
@@ -924,6 +1029,26 @@ def test_main_uses_config_defaults(mocker, tmp_path, capsys):
     capsys.readouterr()
     assert ping.call_args.args[0] == "1.1.1.1"
     assert yaml_file.is_file()
+
+
+def test_main_writes_the_html_report_named_by_the_config(mocker, tmp_path, capsys):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(results_yaml(1.0, 2.0), encoding="utf-8")
+    html_file = tmp_path / "report.html"
+    config_path = write_config(
+        tmp_path,
+        "display:\n  yaml_file: {}\n  format: html\n  html_file: {}\n".format(
+            yaml_file, html_file
+        ),
+    )
+    mocker.patch("sys.argv", ["checkinternet", "--config", config_path, "display"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        checkinternet.main()
+    assert excinfo.value.code == 0
+
+    assert html_file.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+    assert capsys.readouterr().out == ""
 
 
 def test_main_exits_with_command_status(mocker):
