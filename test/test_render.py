@@ -55,9 +55,9 @@ def make_result(time_stamp, packet_loss=None, speed=None, hops=None, ip="8.8.8.8
     )
 
 
-def render(results, thresholds=None):
+def render(results, thresholds=None, embed_plotly=False):
     output = io.StringIO()
-    to_html(results, output, thresholds)
+    to_html(results, output, thresholds, embed_plotly=embed_plotly)
     return output.getvalue()
 
 
@@ -286,6 +286,19 @@ def test_to_html_includes_plotly_from_the_cdn_once():
     text = render([make_result(1.0, packet_loss=1.0, speed=(1.0, 2.0, 3.0))])
 
     assert text.count("cdn.plot.ly/plotly-") == 1
+
+
+def test_to_html_embeds_plotly_instead_of_the_cdn():
+    results = [make_result(1.0, packet_loss=1.0, speed=(1.0, 2.0, 3.0))]
+
+    cdn = render(results)
+    embedded = render(results, embed_plotly=True)
+
+    # No script is fetched from the CDN; the library itself is inlined, so the
+    # report is far larger than the one carrying only a script tag.
+    assert embedded.count("cdn.plot.ly/plotly-") == 0
+    assert "plotly.js v" in embedded
+    assert len(embedded) > len(cdn)
 
 
 def test_to_html_writes_to_a_path(tmp_path):

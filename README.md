@@ -88,6 +88,7 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | `--yaml_file` | `run` | none | Append this run's results to the given file. Without it, results are printed but not recorded. |
 | `--yaml_file` | `display` | required | File of logged results to read. |
 | `--format` | `display` | `human` | `human` for a text summary or `html` for an interactive plot. Both are written to stdout. |
+| `--embed_plotly` | `display` | off | Inline plotly.js in the HTML report so it opens without network access, instead of loading it from the plotly CDN. |
 | `--target_download_mbps` | `display` | `50` | Download speed the HTML report treats as healthy. |
 | `--target_upload_mbps` | `display` | `15` | Upload speed the HTML report treats as healthy. |
 | `--target_latency_ms` | `display` | `20` | Highest latency the HTML report treats as healthy. |
@@ -145,11 +146,22 @@ $ checkinternet display --yaml_file troubleshooting.yaml --format html > trouble
 
 HTML output requires the `html` extra; without it `display --format html` fails with an error stating that plotly is not installed.
 
-The HTML report is a single self-contained dark themed page with three sections: metric cards showing the mean, minimum, and maximum of each measurement against its healthy threshold; three stacked charts sharing one time axis, holding download and upload, latency, and packet loss; and a scrollable table of traceroute hops with one column per run, whose addresses and loss figures can be selected and copied.
+The HTML report is a single dark themed page with three sections: metric cards showing the mean, minimum, and maximum of each measurement against its healthy threshold; three stacked charts sharing one time axis, holding download and upload, latency, and packet loss; and a scrollable table of traceroute hops with one column per run, whose addresses and loss figures can be selected and copied.
 
 Hovering any of the charts reports every metric recorded for that run together, so a latency spike can be read against the speed and packet loss measured at the same moment. Runs where a test did not complete are marked with a dotted red line and report the metrics they are missing as `no data`.
 
 ![HTML Plot](docs/DiplayHTML.PNG)
+
+### Offline Reports
+
+By default the page loads plotly.js from the plotly CDN, which keeps the file small — a report is tens of kilobytes regardless of how many runs it holds — but the charts stay blank when it is opened without network access. Pass `--embed_plotly` to inline the library instead:
+
+```shell
+$ checkinternet display --yaml_file troubleshooting.yaml --format html \
+    --embed_plotly > troubleshooting.html
+```
+
+The result is fully self-contained and renders offline, at the cost of roughly 5MB of inlined JavaScript in every report. Use the default when the report is viewed on a connected machine, and `--embed_plotly` when it is archived, emailed, or opened somewhere without internet access. Everything else about the page is identical.
 
 ### Choosing the Healthy Thresholds
 

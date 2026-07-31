@@ -442,6 +442,7 @@ def test_display_html(mocker, tmp_path, capsys):
     args = Namespace(
         yaml_file=str(yaml_file),
         format="html",
+        embed_plotly=False,
         target_download_mbps=100.0,
         target_upload_mbps=50.0,
         target_latency_ms=10.0,
@@ -456,6 +457,33 @@ def test_display_html(mocker, tmp_path, capsys):
         latency_ms=10.0,
         packet_loss_pct=1.5,
     )
+    assert to_html.call_args.kwargs["embed_plotly"] is False
+    capsys.readouterr()
+
+
+def test_display_html_embeds_plotly_when_asked(mocker, tmp_path, capsys):
+    yaml_file = tmp_path / "results.yaml"
+    result = InternetTestResult(
+        ping_result=PingResult(ip="8.8.8.8", packet_loss=1.0),
+        trace_result=None,
+        speed_result=None,
+    )
+    yaml_file.write_text("---\n{}\n...\n".format(result.to_yaml()), encoding="utf-8")
+
+    to_html = mocker.patch("internet_troubleshooter.checkinternet.to_html")
+
+    args = Namespace(
+        yaml_file=str(yaml_file),
+        format="html",
+        embed_plotly=True,
+        target_download_mbps=50.0,
+        target_upload_mbps=15.0,
+        target_latency_ms=20.0,
+        target_packet_loss_pct=3.0,
+    )
+    assert checkinternet.display(args) == 0
+
+    assert to_html.call_args.kwargs["embed_plotly"] is True
     capsys.readouterr()
 
 
@@ -505,6 +533,7 @@ def test_cli_input_display_defaults(mocker):
     args = checkinternet.cli_input()
     assert args.command == "display"
     assert args.format == "human"
+    assert args.embed_plotly is False
     assert args.target_download_mbps == 50
     assert args.target_upload_mbps == 15
     assert args.target_latency_ms == 20
@@ -541,6 +570,24 @@ def test_cli_input_display_accepts_custom_thresholds(mocker):
         latency_ms=12.5,
         packet_loss_pct=0.5,
     )
+
+
+def test_cli_input_display_accepts_embed_plotly(mocker):
+    mocker.patch(
+        "sys.argv",
+        [
+            "checkinternet",
+            "display",
+            "--yaml_file",
+            "in.yaml",
+            "--format",
+            "html",
+            "--embed_plotly",
+        ],
+    )
+
+    args = checkinternet.cli_input()
+    assert args.embed_plotly is True
 
 
 def test_cli_input_requires_command(mocker, capsys):
