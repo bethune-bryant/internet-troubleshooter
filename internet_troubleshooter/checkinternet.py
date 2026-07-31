@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 import sys
 
+from internet_troubleshooter import __version__
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult, default_hop_ping_count
 from internet_troubleshooter.speed_test import SpeedResult
@@ -24,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 def cli_input():
     parser = argparse.ArgumentParser(description="Test internet connection.")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="%(prog)s {}".format(__version__),
+        help="Print the version and exit.",
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
