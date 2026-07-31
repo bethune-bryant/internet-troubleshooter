@@ -1,6 +1,8 @@
+import json
 from subprocess import CompletedProcess
 
 import pytest
+import yaml
 
 from internet_troubleshooter.speed_test import SpeedResult
 
@@ -68,10 +70,8 @@ def test_SpeedResult():
     assert x.download == pytest.approx(58.542856)
     assert x.upload == pytest.approx(17.1212)
     assert x.latency == pytest.approx(19.266)
-    x_str = str(x)
-    assert (
-        x_str
-        == "Download:    {}Mbps\nUpload:      {}Mbps\nLatency:     {}ms".format(
+    assert str(x).startswith(
+        "Download:    {}Mbps\nUpload:      {}Mbps\nLatency:     {}ms".format(
             58.54,
             17.12,
             19.27,
@@ -79,25 +79,104 @@ def test_SpeedResult():
     )
 
 
-def test_SpeedResult_does_not_retain_raw_json():
+def test_SpeedResult_without_raw_json_prints_only_measurements():
+    x = SpeedResult(upload=17.1212, download=58.542856, latency=19.266)
+    assert x.raw_result is None
+    assert str(x) == (
+        "Download:    {}Mbps\nUpload:      {}Mbps\nLatency:     {}ms".format(
+            58.54,
+            17.12,
+            19.27,
+        )
+    )
+
+
+def test_SpeedResult_retains_the_whole_payload():
     x = SpeedResult(results=test_json)
-    assert not hasattr(x, "result")
-    assert "MyISP" not in repr(x)
-    assert "AA:AA:AA:AA:AA:AA" not in repr(x)
+
+    assert x.raw_result == json.loads(test_json)
+    assert x.raw_result["interface"]["macAddr"] == "AA:AA:AA:AA:AA:AA"
+    assert x.raw_result["interface"]["externalIp"] == "555.555.555.555"
+    assert x.raw_result["isp"] == "MyISP"
+    assert x.raw_result["server"]["name"] == "Conterra"
+    assert x.raw_result["result"]["url"] == (
+        "https://www.speedtest.net/result/c/555-555"
+    )
 
 
-def test_SpeedResult_to_dict_omits_raw_json():
+def test_SpeedResult_to_dict_keeps_the_whole_payload():
     x = SpeedResult(results=test_json)
     assert x.to_dict() == {
         "upload": pytest.approx(17.1212),
         "download": pytest.approx(58.542856),
         "latency": pytest.approx(19.266),
+        "raw_result": json.loads(test_json),
     }
+
+
+def test_SpeedResult_to_dict_omits_the_payload_when_there_is_none():
+    x = SpeedResult(upload=1.0, download=2.0, latency=3.0)
+    assert x.to_dict() == {"upload": 1.0, "download": 2.0, "latency": 3.0}
 
 
 def test_SpeedResult_from_dict_round_trip():
     x = SpeedResult(results=test_json)
-    assert SpeedResult.from_dict(x.to_dict()) == x
+    restored = SpeedResult.from_dict(x.to_dict())
+
+    assert restored == x
+    assert restored.raw_result == json.loads(test_json)
+
+
+def test_SpeedResult_from_dict_round_trip_through_yaml():
+    x = SpeedResult(results=test_json)
+    restored = SpeedResult.from_dict(yaml.safe_load(yaml.safe_dump(x.to_dict())))
+
+    assert restored == x
+    assert restored.raw_result == json.loads(test_json)
+
+
+def test_SpeedResult_from_dict_without_raw_result():
+    """Results logged before the payload was recorded still load."""
+    x = SpeedResult.from_dict({"upload": 1.0, "download": 2.0, "latency": 3.0})
+
+    assert x == SpeedResult(upload=1.0, download=2.0, latency=3.0)
+    assert x.raw_result is None
+    assert x.context() == []
+
+
+def test_SpeedResult_context_reports_where_the_test_ran():
+    x = SpeedResult(results=test_json)
+
+    assert x.server == "Conterra (Stemmons, TX)"
+    assert x.isp == "MyISP"
+    assert x.external_ip == "555.555.555.555"
+    assert x.context() == [
+        ("Server", "Conterra (Stemmons, TX)"),
+        ("ISP", "MyISP"),
+        ("External IP", "555.555.555.555"),
+    ]
+    assert str(x).endswith(
+        "\nServer:      Conterra (Stemmons, TX)"
+        "\nISP:         MyISP"
+        "\nExternal IP: 555.555.555.555"
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_result, expected",
+    [
+        (None, None),
+        ({}, None),
+        ({"server": {}}, None),
+        ({"server": {"name": "", "location": ""}}, None),
+        ({"server": {"name": "Conterra"}}, "Conterra"),
+        ({"server": {"location": "Stemmons, TX"}}, "Stemmons, TX"),
+        ({"server": "not a mapping"}, None),
+    ],
+)
+def test_SpeedResult_server_tolerates_partial_payloads(raw_result, expected):
+    x = SpeedResult(upload=1.0, download=2.0, latency=3.0, raw_result=raw_result)
+    assert x.server == expected
 
 
 @pytest.mark.parametrize(

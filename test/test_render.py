@@ -14,6 +14,7 @@ from internet_troubleshooter.render import (
     _metric_status,
     _packet_loss_axis_max,
     _ping_target,
+    _speed_context,
     _trace_rows,
     to_html,
     to_human,
@@ -23,11 +24,26 @@ from internet_troubleshooter.speed_test import SpeedResult
 from internet_troubleshooter.trace_test import TraceResult
 
 
-def make_result(time_stamp, packet_loss=None, speed=None, hops=None, ip="8.8.8.8"):
+SPEEDTEST_PAYLOAD = {
+    "isp": "MyISP",
+    "interface": {"externalIp": "555.555.555.555"},
+    "server": {"name": "Conterra", "location": "Stemmons, TX"},
+}
+
+
+def make_result(
+    time_stamp,
+    packet_loss=None,
+    speed=None,
+    hops=None,
+    ip="8.8.8.8",
+    raw_speed=None,
+):
     """A TestResult holding only the pieces a test cares about.
 
     speed is (download, upload, latency); hops is a list of (ip, packet_loss)
-    pairs, where None stands for a hop that could not be pinged.
+    pairs, where None stands for a hop that could not be pinged. raw_speed is
+    the full speedtest JSON payload logged with a speed result.
     """
     ping_result = None
     if packet_loss is not None:
@@ -36,7 +52,12 @@ def make_result(time_stamp, packet_loss=None, speed=None, hops=None, ip="8.8.8.8
     speed_result = None
     if speed is not None:
         download, upload, latency = speed
-        speed_result = SpeedResult(download=download, upload=upload, latency=latency)
+        speed_result = SpeedResult(
+            download=download,
+            upload=upload,
+            latency=latency,
+            raw_result=raw_speed,
+        )
 
     trace_result = None
     if hops is not None:
@@ -359,6 +380,61 @@ def test_ping_target_requires_agreement():
         )
         is None
     )
+
+
+def test_to_html_summary_chips_report_the_speedtest_context():
+    results = [
+        make_result(
+            1.0,
+            packet_loss=0.0,
+            speed=(80.0, 20.0, 10.0),
+            raw_speed=SPEEDTEST_PAYLOAD,
+        )
+    ]
+
+    text = render(results)
+    assert '<span class="chip">Server Conterra (Stemmons, TX)</span>' in text
+    assert '<span class="chip">ISP MyISP</span>' in text
+    assert '<span class="chip">External IP 555.555.555.555</span>' in text
+
+
+def test_speed_context_requires_agreement():
+    other_isp = dict(SPEEDTEST_PAYLOAD, isp="OtherISP")
+
+    assert _speed_context([make_result(1.0, speed=(1.0, 2.0, 3.0))]) == []
+    assert _speed_context([make_result(1.0, packet_loss=0.0)]) == []
+    assert _speed_context(
+        [make_result(1.0, speed=(1.0, 2.0, 3.0), raw_speed=SPEEDTEST_PAYLOAD)]
+    ) == [
+        ("Server", "Conterra (Stemmons, TX)"),
+        ("ISP", "MyISP"),
+        ("External IP", "555.555.555.555"),
+    ]
+    # Runs that disagree on a detail drop only that detail.
+    assert _speed_context(
+        [
+            make_result(1.0, speed=(1.0, 2.0, 3.0), raw_speed=SPEEDTEST_PAYLOAD),
+            make_result(2.0, speed=(1.0, 2.0, 3.0), raw_speed=other_isp),
+        ]
+    ) == [
+        ("Server", "Conterra (Stemmons, TX)"),
+        ("External IP", "555.555.555.555"),
+    ]
+
+
+def test_to_html_escapes_the_speedtest_context():
+    text = render(
+        [
+            make_result(
+                1.0,
+                speed=(1.0, 2.0, 3.0),
+                raw_speed={"isp": "<b>evil</b>"},
+            )
+        ]
+    )
+
+    assert "<b>evil</b>" not in text
+    assert '<span class="chip">ISP &lt;b&gt;evil&lt;/b&gt;</span>' in text
 
 
 def test_format_summary_stats_reports_run_metadata():
