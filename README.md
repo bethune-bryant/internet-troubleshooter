@@ -221,5 +221,5 @@ pytest --cov=internet_troubleshooter
 ```
 
 Run `ruff format .` to apply formatting and `ruff check --fix .` to apply the
-lint fixes ruff can make on its own. The `mypy` check is advisory: it runs as a
-non-blocking CI job.
+lint fixes ruff can make on its own. CI also runs `mypy` on Python 3.12 as a
+required check.

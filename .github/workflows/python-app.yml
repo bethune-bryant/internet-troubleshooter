@@ -48,11 +48,8 @@ jobs:
         verbose: true # optional (default = false)
 
   types:
-    name: types (optional)
+    name: types
     runs-on: ubuntu-latest
-    # Advisory only: type coverage is incomplete, so a failure here should not
-    # block a merge.
-    continue-on-error: true
 
     steps:
     - uses: actions/checkout@v4
@@ -70,13 +67,17 @@ jobs:
 
   build:
     name: build
-    needs: test
+    needs: [test, types]
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Require successful test matrix
+      - name: Require successful checks
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "test matrix result: ${{ needs.test.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.types.result }}" != "success" ]; then
+            echo "types job result: ${{ needs.types.result }}"
             exit 1
           fi
