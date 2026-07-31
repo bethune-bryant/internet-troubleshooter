@@ -1,12 +1,34 @@
 """Rendering of collected results into human readable and HTML reports."""
 
+from __future__ import annotations
+
+import os
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from html import escape
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    TextIO,
+    Tuple,
+    Union,
+    cast,
+)
 
 from internet_troubleshooter.ping_test import PingResult
+from internet_troubleshooter.result import TestResult
 from internet_troubleshooter.speed_test import SpeedResult
+from internet_troubleshooter.trace_test import TraceResult
 from internet_troubleshooter.utils import safe_mean
+
+# Either an open text stream or a path to write the report to.
+HtmlTarget = Union[TextIO, str, "os.PathLike[str]"]
 
 # Reference lines drawn on the HTML plots, marking the thresholds below which a
 # connection is considered to be underperforming.
@@ -204,7 +226,7 @@ where a test did not complete.</p>
 """
 
 
-def to_human(results, io_target=sys.stdout):
+def to_human(results: Sequence[TestResult], io_target: TextIO = sys.stdout) -> None:
     speed_results = [result.speed_result for result in results]
     ping_results = [result.ping_result for result in results]
     print(
@@ -215,7 +237,7 @@ def to_human(results, io_target=sys.stdout):
     )
 
 
-def _import_plotly():
+def _import_plotly() -> Tuple[Any, Any]:
     """Import plotly on demand, reporting a helpful error when it is missing."""
     try:
         from plotly import graph_objs as go
@@ -229,17 +251,25 @@ def _import_plotly():
     return go, make_subplots
 
 
-def _aligned_series(results):
+def _aligned_series(
+    results: Sequence[TestResult],
+) -> Tuple[
+    List[datetime],
+    List[Optional[float]],
+    List[Optional[float]],
+    List[Optional[float]],
+    List[Optional[float]],
+]:
     """Every run's date, with one value list per metric aligned to it.
 
     All the traces share this x axis so that hovering a run reports each of its
     metrics together; a run that skipped or failed a test carries None.
     """
     dates = [result.get_date() for result in results]
-    download = []
-    upload = []
-    latency = []
-    packet_loss = []
+    download: List[Optional[float]] = []
+    upload: List[Optional[float]] = []
+    latency: List[Optional[float]] = []
+    packet_loss: List[Optional[float]] = []
     for result in results:
         speed = result.speed_result
         download.append(None if speed is None else speed.download)
@@ -250,23 +280,28 @@ def _aligned_series(results):
     return dates, download, upload, latency, packet_loss
 
 
-def _measured(values):
+def _measured(values: Sequence[Optional[float]]) -> List[float]:
     """The values that were actually recorded, dropping the missing ones."""
     return [value for value in values if value is not None]
 
 
-def _format_threshold(value):
+def _format_threshold(value: float) -> str:
     """A threshold as written in labels, without a pointless trailing zero."""
     return "{:g}".format(value)
 
 
-def _hover_value(value, unit):
+def _hover_value(value: Optional[float], unit: str) -> str:
     if value is None:
         return HOVER_MISSING
     return "{:.2f}{}".format(value, unit)
 
 
-def _hover_texts(download, upload, latency, packet_loss):
+def _hover_texts(
+    download: Sequence[Optional[float]],
+    upload: Sequence[Optional[float]],
+    latency: Sequence[Optional[float]],
+    packet_loss: Sequence[Optional[float]],
+) -> List[str]:
     """One hover block per run, listing all four metrics for that run.
 
     A unified hover only covers the traces of the subplot being hovered, so
@@ -285,7 +320,10 @@ def _hover_texts(download, upload, latency, packet_loss):
     ]
 
 
-def _packet_loss_axis_max(values, thresholds=DEFAULT_THRESHOLDS):
+def _packet_loss_axis_max(
+    values: Sequence[Optional[float]],
+    thresholds: RenderThresholds = DEFAULT_THRESHOLDS,
+) -> float:
     """Upper bound for the packet loss axis, always showing the threshold."""
     measured = _measured(values)
     peak = max(measured) if measured else 0
@@ -299,7 +337,9 @@ def _packet_loss_axis_max(values, thresholds=DEFAULT_THRESHOLDS):
     )
 
 
-def _add_threshold_line(fig, value, label, row, position):
+def _add_threshold_line(
+    fig: Any, value: float, label: str, row: int, position: str
+) -> None:
     fig.add_hline(
         y=value,
         annotation_text=label,
@@ -314,8 +354,19 @@ def _add_threshold_line(fig, value, label, row, position):
     )
 
 
-def _add_metric_trace(fig, go, row, xs, values, label, color, hover_texts, **extra):
+def _add_metric_trace(
+    fig: Any,
+    go: Any,
+    row: int,
+    xs: Sequence[datetime],
+    values: Sequence[Optional[float]],
+    label: str,
+    color: str,
+    hover_texts: Optional[Sequence[str]],
+    **extra: Any,
+) -> None:
     """One metric line, hovering as the full run when hover_texts is given."""
+    hover: Dict[str, Any]
     if hover_texts is None:
         hover = dict(hoverinfo="skip")
     else:
@@ -337,7 +388,15 @@ def _add_metric_trace(fig, go, row, xs, values, label, color, hover_texts, **ext
     )
 
 
-def _add_speed_chart(fig, go, xs, download, upload, hover_texts, thresholds):
+def _add_speed_chart(
+    fig: Any,
+    go: Any,
+    xs: Sequence[datetime],
+    download: Sequence[Optional[float]],
+    upload: Sequence[Optional[float]],
+    hover_texts: Sequence[str],
+    thresholds: RenderThresholds,
+) -> None:
     """Download and upload, sharing the Mbps axis on the first row."""
     _add_metric_trace(fig, go, 1, xs, download, "Download", COLOR_DOWNLOAD, hover_texts)
     # Download already carries the hover block for this row, and repeating it
@@ -367,7 +426,14 @@ def _add_speed_chart(fig, go, xs, download, upload, hover_texts, thresholds):
     )
 
 
-def _add_latency_chart(fig, go, xs, latency, hover_texts, thresholds):
+def _add_latency_chart(
+    fig: Any,
+    go: Any,
+    xs: Sequence[datetime],
+    latency: Sequence[Optional[float]],
+    hover_texts: Sequence[str],
+    thresholds: RenderThresholds,
+) -> None:
     """Latency on its own row, where the Mbps scale cannot flatten it."""
     _add_metric_trace(fig, go, 2, xs, latency, "Latency", COLOR_LATENCY, hover_texts)
 
@@ -382,7 +448,14 @@ def _add_latency_chart(fig, go, xs, latency, hover_texts, thresholds):
     fig.update_yaxes(title_text="Latency(ms)", rangemode="tozero", row=2, col=1)
 
 
-def _add_packet_loss_chart(fig, go, xs, packet_loss, hover_texts, thresholds):
+def _add_packet_loss_chart(
+    fig: Any,
+    go: Any,
+    xs: Sequence[datetime],
+    packet_loss: Sequence[Optional[float]],
+    hover_texts: Sequence[str],
+    thresholds: RenderThresholds,
+) -> None:
     """Packet loss against the primary ping target on the third row."""
     _add_metric_trace(
         fig,
@@ -415,7 +488,7 @@ def _add_packet_loss_chart(fig, go, xs, packet_loss, hover_texts, thresholds):
     )
 
 
-def _add_incomplete_run_markers(fig, results):
+def _add_incomplete_run_markers(fig: Any, results: Sequence[TestResult]) -> None:
     """Mark runs where the ping or speed test failed to produce a value."""
     for result in results:
         if result.speed_result is not None and result.ping_result is not None:
@@ -431,7 +504,9 @@ def _add_incomplete_run_markers(fig, results):
             )
 
 
-def _build_charts_figure(results, thresholds=DEFAULT_THRESHOLDS):
+def _build_charts_figure(
+    results: Sequence[TestResult], thresholds: RenderThresholds = DEFAULT_THRESHOLDS
+) -> Any:
     """Dark themed figure with the speed, latency, and packet loss charts."""
     go, make_subplots = _import_plotly()
 
@@ -474,7 +549,9 @@ def _build_charts_figure(results, thresholds=DEFAULT_THRESHOLDS):
     return fig
 
 
-def _metric_status(average, threshold, higher_is_better):
+def _metric_status(
+    average: Optional[float], threshold: float, higher_is_better: bool
+) -> str:
     """Whether the average sits on the healthy side of its threshold."""
     if average is None:
         return "empty"
@@ -483,7 +560,13 @@ def _metric_status(average, threshold, higher_is_better):
     return "good" if average <= threshold else "bad"
 
 
-def _metric_stats(label, unit, values, threshold, higher_is_better):
+def _metric_stats(
+    label: str,
+    unit: str,
+    values: Sequence[float],
+    threshold: float,
+    higher_is_better: bool,
+) -> Dict[str, Any]:
     average = safe_mean(values)
     return {
         "label": label,
@@ -498,7 +581,7 @@ def _metric_stats(label, unit, values, threshold, higher_is_better):
     }
 
 
-def _ping_target(results):
+def _ping_target(results: Sequence[TestResult]) -> Optional[str]:
     """The ping target, when every run used the same one."""
     targets = {
         result.ping_result.ip for result in results if result.ping_result is not None
@@ -508,7 +591,9 @@ def _ping_target(results):
     return None
 
 
-def _format_summary_stats(results, thresholds=DEFAULT_THRESHOLDS):
+def _format_summary_stats(
+    results: Sequence[TestResult], thresholds: RenderThresholds = DEFAULT_THRESHOLDS
+) -> Dict[str, Any]:
     """Mean/min/max per metric plus run counts, for the summary cards.
 
     Expects results sorted by time stamp so the reported range is correct.
@@ -548,17 +633,17 @@ def _format_summary_stats(results, thresholds=DEFAULT_THRESHOLDS):
     }
 
 
-def _format_run_time(result):
+def _format_run_time(result: TestResult) -> str:
     return result.get_date().strftime(DATE_FORMAT)
 
 
-def _format_measurement(value, unit):
+def _format_measurement(value: Optional[float], unit: str) -> str:
     if value is None:
         return MISSING_VALUE
     return "{:.2f}{}".format(value, unit)
 
 
-def _chips_html(fragments):
+def _chips_html(fragments: Iterable[str]) -> str:
     """Pill shaped labels; fragments must already be HTML safe."""
     chips = "".join(
         '<span class="chip">{}</span>'.format(fragment) for fragment in fragments
@@ -566,7 +651,7 @@ def _chips_html(fragments):
     return '<div class="chips">{}</div>'.format(chips)
 
 
-def _panel_html(panel_id, title, aside_html, body_html):
+def _panel_html(panel_id: str, title: str, aside_html: str, body_html: str) -> str:
     return (
         '<section class="panel" id="{panel_id}">'
         '<div class="panel__header"><h2>{title}</h2>{aside}</div>'
@@ -575,7 +660,7 @@ def _panel_html(panel_id, title, aside_html, body_html):
     ).format(panel_id=panel_id, title=title, aside=aside_html, body=body_html)
 
 
-def _metric_card_html(metric):
+def _metric_card_html(metric: Mapping[str, Any]) -> str:
     comparison = "&ge;" if metric["higher_is_better"] else "&le;"
     return (
         '<article class="card card--{status}">'
@@ -599,7 +684,7 @@ def _metric_card_html(metric):
     )
 
 
-def _summary_chips(summary):
+def _summary_chips(summary: Mapping[str, Any]) -> List[str]:
     fragments = ["{} run(s)".format(summary["runs"])]
     if summary["ping_target"] is not None:
         fragments.append("Target {}".format(escape(summary["ping_target"])))
@@ -614,7 +699,7 @@ def _summary_chips(summary):
     return fragments
 
 
-def _build_summary_html(summary):
+def _build_summary_html(summary: Mapping[str, Any]) -> str:
     """Metric cards showing the mean, min, and max of every measurement."""
     if not summary["runs"]:
         body = '<p class="empty">No results to summarize yet.</p>'
@@ -625,24 +710,27 @@ def _build_summary_html(summary):
     return _panel_html("summary", "Summary", _chips_html(_summary_chips(summary)), body)
 
 
-def _trace_rows(trace_results):
-    """One row per hop index, holding the ping for each traced run."""
-    hop_count = max(len(result.trace_result.ping_results) for result in trace_results)
+def _trace_rows(
+    trace_results: Sequence[TestResult],
+) -> List[Tuple[int, List[Optional[PingResult]]]]:
+    """One row per hop index, holding the ping for each traced run.
+
+    Callers pass only the runs that recorded a trace.
+    """
+    hop_lists = [
+        cast(TraceResult, result.trace_result).ping_results for result in trace_results
+    ]
+    hop_count = max(len(hops) for hops in hop_lists)
     rows = []
     for index in range(hop_count):
-        pings = [
-            (
-                result.trace_result.ping_results[index]
-                if index < len(result.trace_result.ping_results)
-                else None
-            )
-            for result in trace_results
-        ]
+        pings = [hops[index] if index < len(hops) else None for hops in hop_lists]
         rows.append((index + 1, pings))
     return rows
 
 
-def _trace_cell_html(ping, thresholds=DEFAULT_THRESHOLDS):
+def _trace_cell_html(
+    ping: Optional[PingResult], thresholds: RenderThresholds = DEFAULT_THRESHOLDS
+) -> str:
     if ping is None:
         return '<td class="cell--missing">{}</td>'.format(MISSING_VALUE)
     bad = ping.packet_loss > thresholds.packet_loss_pct
@@ -659,7 +747,10 @@ def _trace_cell_html(ping, thresholds=DEFAULT_THRESHOLDS):
     )
 
 
-def _trace_table_html(trace_results, thresholds=DEFAULT_THRESHOLDS):
+def _trace_table_html(
+    trace_results: Sequence[TestResult],
+    thresholds: RenderThresholds = DEFAULT_THRESHOLDS,
+) -> str:
     header = "".join(
         '<th scope="col">{}</th>'.format(escape(_format_run_time(result)))
         for result in trace_results
@@ -681,7 +772,9 @@ def _trace_table_html(trace_results, thresholds=DEFAULT_THRESHOLDS):
     ).format(header=header, rows=rows)
 
 
-def _build_trace_tables_html(results, thresholds=DEFAULT_THRESHOLDS):
+def _build_trace_tables_html(
+    results: Sequence[TestResult], thresholds: RenderThresholds = DEFAULT_THRESHOLDS
+) -> str:
     """Scrollable, selectable table of traceroute hops, one column per run."""
     trace_results = [result for result in results if result.trace_result is not None]
 
@@ -707,19 +800,29 @@ def _build_trace_tables_html(results, thresholds=DEFAULT_THRESHOLDS):
     )
 
 
-def _build_charts_html(results, thresholds=DEFAULT_THRESHOLDS, embed_plotly=False):
+def _build_charts_html(
+    results: Sequence[TestResult],
+    thresholds: RenderThresholds = DEFAULT_THRESHOLDS,
+    embed_plotly: bool = False,
+) -> str:
     """The charts, loading plotly.js from the CDN or inlining it when asked."""
     fig = _build_charts_figure(results, thresholds)
-    return fig.to_html(
-        full_html=False,
-        include_plotlyjs=True if embed_plotly else "cdn",
-        config={"displayModeBar": True, "responsive": True},
+    return cast(
+        str,
+        fig.to_html(
+            full_html=False,
+            include_plotlyjs=True if embed_plotly else "cdn",
+            config={"displayModeBar": True, "responsive": True},
+        ),
     )
 
 
 def _assemble_html_document(
-    charts_html, summary_html, trace_html, thresholds=DEFAULT_THRESHOLDS
-):
+    charts_html: str,
+    summary_html: str,
+    trace_html: str,
+    thresholds: RenderThresholds = DEFAULT_THRESHOLDS,
+) -> str:
     charts_panel = _panel_html(
         "charts",
         "Performance Over Time",
@@ -738,7 +841,7 @@ def _assemble_html_document(
     )
 
 
-def _write_html(document, io_target):
+def _write_html(document: str, io_target: HtmlTarget) -> None:
     if hasattr(io_target, "write"):
         io_target.write(document)
         return
@@ -746,7 +849,12 @@ def _write_html(document, io_target):
         target.write(document)
 
 
-def to_html(results, io_target=sys.stdout, thresholds=None, embed_plotly=False):
+def to_html(
+    results: Sequence[TestResult],
+    io_target: HtmlTarget = sys.stdout,
+    thresholds: Optional[RenderThresholds] = None,
+    embed_plotly: bool = False,
+) -> None:
     """Write the HTML report, inlining plotly.js when embed_plotly is set.
 
     The inlined report is several megabytes larger but needs no network access

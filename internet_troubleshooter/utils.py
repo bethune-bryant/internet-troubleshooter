@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import ipaddress
 import logging
 import re
 import subprocess
 import sys
 from statistics import mean, variance
+from typing import Optional, Sequence
 
 DEFAULT_TIMEOUT = 120
 
@@ -13,7 +16,7 @@ MAX_HOSTNAME_LENGTH = 253
 HOSTNAME_LABEL_REGEX = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 
-def is_valid_host(value):
+def is_valid_host(value: object) -> bool:
     """True when value is an IP address or a hostname safe to pass to ping.
 
     Anything that could be mistaken for a command line flag is rejected.
@@ -36,7 +39,7 @@ def is_valid_host(value):
     )
 
 
-def configure_logging(debug=False):
+def configure_logging(debug: bool = False) -> None:
     """Send log records to stderr, including DEBUG level ones when debug is set."""
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.WARNING,
@@ -45,7 +48,9 @@ def configure_logging(debug=False):
     )
 
 
-def run_command(command, timeout=DEFAULT_TIMEOUT):
+def run_command(
+    command: Sequence[str], timeout: float = DEFAULT_TIMEOUT
+) -> Optional["subprocess.CompletedProcess[str]"]:
     """Run command and return the CompletedProcess, or None if it could not run."""
     try:
         return subprocess.run(
@@ -74,14 +79,14 @@ def run_command(command, timeout=DEFAULT_TIMEOUT):
     return None
 
 
-def safe_mean(values):
+def safe_mean(values: Sequence[float]) -> Optional[float]:
     """Mean of values, or None when there is no data to average."""
     if not values:
         return None
     return mean(values)
 
 
-def summarize(values, title="", unit=""):
+def summarize(values: Sequence[float], title: str = "", unit: str = "") -> str:
     if len(values) >= 2:
         return (
             "{0}:\n"

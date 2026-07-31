@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import logging
 from datetime import datetime
 import sys
+from typing import Optional, Tuple
 
 from internet_troubleshooter import __version__
 from internet_troubleshooter.ping_test import PingResult
@@ -23,7 +26,7 @@ from internet_troubleshooter.utils import configure_logging, is_valid_host
 logger = logging.getLogger(__name__)
 
 
-def cli_input():
+def cli_input() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Test internet connection.")
     parser.add_argument(
         "--version",
@@ -134,7 +137,7 @@ def cli_input():
     return parser.parse_args()
 
 
-def _validate_ping_ip(ping_ip):
+def _validate_ping_ip(ping_ip: str) -> bool:
     if is_valid_host(ping_ip):
         return True
     print(
@@ -145,7 +148,7 @@ def _validate_ping_ip(ping_ip):
     return False
 
 
-def _validate_ping_count(count):
+def _validate_ping_count(count: Optional[int]) -> bool:
     if count is None or count >= 1:
         return True
     print(
@@ -156,7 +159,7 @@ def _validate_ping_count(count):
     return False
 
 
-def _validate_trace_hop_ping_count(count):
+def _validate_trace_hop_ping_count(count: Optional[int]) -> bool:
     if count is None or count >= 1:
         return True
     print(
@@ -167,14 +170,16 @@ def _validate_trace_hop_ping_count(count):
     return False
 
 
-def _resolve_trace_hop_ping_count(count):
+def _resolve_trace_hop_ping_count(count: Optional[int]) -> int:
     """Hop packet count to use, filling in the root-aware default if unset."""
     if count is None:
         return default_hop_ping_count()
     return count
 
 
-def _run_ping_tests(args, test_result):
+def _run_ping_tests(
+    args: argparse.Namespace, test_result: TestResult
+) -> Tuple[int, int]:
     if args.skip_pingtest:
         return 0, 0
 
@@ -199,7 +204,9 @@ def _run_ping_tests(args, test_result):
     return attempted, succeeded
 
 
-def _run_speedtest(args, test_result):
+def _run_speedtest(
+    args: argparse.Namespace, test_result: TestResult
+) -> Tuple[int, int]:
     if args.skip_speedtest:
         return 0, 0
 
@@ -215,7 +222,7 @@ def _run_speedtest(args, test_result):
     return 1, 1
 
 
-def _log_yaml_results(args, test_result):
+def _log_yaml_results(args: argparse.Namespace, test_result: TestResult) -> int:
     if args.yaml_file is None:
         return 0
 
@@ -232,7 +239,7 @@ def _log_yaml_results(args, test_result):
     return 0
 
 
-def run(args):
+def run(args: argparse.Namespace) -> int:
     logger.debug("%s", datetime.now())
 
     if not _validate_ping_ip(args.ping_ip):
@@ -264,7 +271,7 @@ def run(args):
     return 0
 
 
-def _display_thresholds(args):
+def _display_thresholds(args: argparse.Namespace) -> RenderThresholds:
     """The healthy thresholds the HTML report draws and colors against."""
     return RenderThresholds(
         download_mbps=args.target_download_mbps,
@@ -274,7 +281,7 @@ def _display_thresholds(args):
     )
 
 
-def display(args):
+def display(args: argparse.Namespace) -> int:
     try:
         results = TestResult.load_results(args.yaml_file)
     except OSError as error:
@@ -297,7 +304,7 @@ def display(args):
     return 0
 
 
-def main():
+def main() -> None:
     args = cli_input()
     configure_logging(args.debug)
     logger.debug("Parsed Args: %s", args)

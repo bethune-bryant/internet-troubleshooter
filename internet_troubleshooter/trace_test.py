@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import logging
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from internet_troubleshooter.ping_test import PingResult, default_ping_count_for_uid
 from internet_troubleshooter.utils import run_command
@@ -38,7 +41,7 @@ NUMERIC_REJECTED_REGEX = re.compile(
 
 # True when -n is accepted, False when it is not, and None while unprobed or
 # when traceroute could not be run at all.
-_numeric_supported = None
+_numeric_supported: Optional[bool] = None
 
 # Hops are only pinged to locate where loss is introduced, so they default to a
 # smaller sample than the primary target: a trace of 20 hops would otherwise
@@ -48,7 +51,7 @@ DEFAULT_TRACE_HOP_PING_COUNT_ROOT = 50
 DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT = 10
 
 
-def parse_trace_line(line):
+def parse_trace_line(line: str) -> Optional[str]:
     """Return the IP address of a traceroute hop line, or None if there is none."""
     match = HOP_PAREN_IP_REGEX.match(line) or HOP_NUMERIC_IP_REGEX.match(line)
     if match is None:
@@ -56,7 +59,7 @@ def parse_trace_line(line):
     return match.group(1)
 
 
-def _probe_numeric_support():
+def _probe_numeric_support() -> Optional[bool]:
     """Ask traceroute for its help text and look for -n in it.
 
     Returns None when traceroute could not be run, in which case run_command has
@@ -69,12 +72,12 @@ def _probe_numeric_support():
     return NUMERIC_HELP_REGEX.search(help_text) is not None
 
 
-def _cache_numeric_support(supported):
+def _cache_numeric_support(supported: Optional[bool]) -> None:
     global _numeric_supported
     _numeric_supported = supported
 
 
-def _traceroute_supports_numeric():
+def _traceroute_supports_numeric() -> Optional[bool]:
     """Whether the installed traceroute accepts -n, probing at most once.
 
     Which traceroute is installed cannot change while the process runs, and a
@@ -86,14 +89,14 @@ def _traceroute_supports_numeric():
     return _numeric_supported
 
 
-def _traceroute_command(ip):
+def _traceroute_command(ip: str) -> List[str]:
     """The traceroute invocation for ip, using -n only where it is supported."""
     if _traceroute_supports_numeric():
         return [TRACEROUTE, "-n", ip]
     return [TRACEROUTE, ip]
 
 
-def _numeric_option_rejected(result):
+def _numeric_option_rejected(result: "subprocess.CompletedProcess[str]") -> bool:
     """True when traceroute failed because it does not know the -n option."""
     return (
         result.returncode != 0
@@ -101,7 +104,7 @@ def _numeric_option_rejected(result):
     )
 
 
-def _run_traceroute(ip):
+def _run_traceroute(ip: str) -> Optional["subprocess.CompletedProcess[str]"]:
     """Trace to ip, retrying without -n if the binary turns out to reject it.
 
     The help text and the binary that ends up running can disagree, so a
@@ -122,7 +125,7 @@ def _run_traceroute(ip):
     return run_command(retry, timeout=TRACE_TIMEOUT)
 
 
-def default_hop_ping_count():
+def default_hop_ping_count() -> int:
     """Packets to send to each hop when --trace_hop_ping_count was not given."""
     return default_ping_count_for_uid(
         DEFAULT_TRACE_HOP_PING_COUNT_ROOT, DEFAULT_TRACE_HOP_PING_COUNT_NON_ROOT
@@ -133,7 +136,7 @@ def default_hop_ping_count():
 class TraceResult:
     ping_results: List[Optional[PingResult]]
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "ping_results": [
                 None if ping is None else ping.to_dict() for ping in self.ping_results
@@ -141,7 +144,7 @@ class TraceResult:
         }
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: Mapping[str, Any]) -> TraceResult:
         return cls(
             ping_results=[
                 None if ping is None else PingResult.from_dict(ping)
@@ -150,7 +153,7 @@ class TraceResult:
         )
 
     @staticmethod
-    def execute_test(ip):
+    def execute_test(ip: str) -> Optional[str]:
         trace_result = _run_traceroute(ip)
         if trace_result is None:
             return None
@@ -163,14 +166,14 @@ class TraceResult:
         return trace_result.stdout
 
     @staticmethod
-    def hop_ips(trace_output, target_ip):
+    def hop_ips(trace_output: str, target_ip: str) -> List[str]:
         """Addresses of the intermediate hops in a traceroute.
 
         A single router often answers for several hops, so addresses are
         deduplicated, keeping the order in which they first appear. The target
         itself is excluded because it is covered by the primary ping test.
         """
-        hops = list()
+        hops: List[str] = list()
         for line in trace_output.splitlines():
             trace_ip = parse_trace_line(line)
             logger.debug("trace_ip: %s", trace_ip)
@@ -180,7 +183,7 @@ class TraceResult:
         return hops
 
     @staticmethod
-    def run_test(ip, hop_count=None):
+    def run_test(ip: str, hop_count: Optional[int] = None) -> Optional[TraceResult]:
         logger.debug("Running Traceroute")
         results = TraceResult.execute_test(ip)
         logger.debug("Traceroute: %s", results)
@@ -189,7 +192,7 @@ class TraceResult:
 
         if hop_count is None:
             hop_count = default_hop_ping_count()
-        trace_ping_results = list()
+        trace_ping_results: List[Optional[PingResult]] = list()
         for trace_ip in TraceResult.hop_ips(results, ip):
             trace_ping_result = PingResult.run_test(trace_ip, hop_count)
             if trace_ping_result is not None:

@@ -87,7 +87,7 @@ max-complexity = 10
 
 [tool.mypy]
 files = ["internet_troubleshooter"]
+strict = true
+# plotly is an optional dependency and ships no stubs, so its imports resolve
+# to Any rather than failing the run on machines without the html extra.
 ignore_missing_imports = true
-check_untyped_defs = true
-warn_redundant_casts = true
-warn_unused_ignores = true

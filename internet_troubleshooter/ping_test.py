@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import os
 import re
 import sys
 from dataclasses import dataclass
+from typing import Any, Dict, Mapping, Optional, Sequence
+
 from internet_troubleshooter.utils import run_command, summarize
 
 PACKET_LOSS_REGEX = re.compile(r"([\d.]+)%\s+packet\s+loss")
@@ -12,7 +16,7 @@ DEFAULT_PING_COUNT_ROOT = 400
 DEFAULT_PING_COUNT_NON_ROOT = 10
 
 
-def default_ping_count_for_uid(root_count, non_root_count):
+def default_ping_count_for_uid(root_count: int, non_root_count: int) -> int:
     """Packet count to use when none was requested.
 
     Only root may flood ping, so a much larger sample is affordable there.
@@ -25,30 +29,30 @@ class PingResult:
     ip: str
     packet_loss: float
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "{:.2f}%: {}".format(self.packet_loss, self.ip)
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {"ip": self.ip, "packet_loss": self.packet_loss}
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: Mapping[str, Any]) -> PingResult:
         return cls(ip=data["ip"], packet_loss=float(data["packet_loss"]))
 
     @staticmethod
-    def parse_result(ip, result):
+    def parse_result(ip: str, result: str) -> Optional[PingResult]:
         packet_loss_match = PACKET_LOSS_REGEX.search(result)
         if packet_loss_match is None:
             return None
         return PingResult(ip=ip, packet_loss=float(packet_loss_match.group(1)))
 
     @staticmethod
-    def summarize(results):
+    def summarize(results: Sequence[Optional[PingResult]]) -> str:
         packet_loss = [result.packet_loss for result in results if result is not None]
         return summarize(packet_loss, "Packet Loss", "%")
 
     @staticmethod
-    def execute_test(ip, count=None):
+    def execute_test(ip: str, count: Optional[int] = None) -> Optional[str]:
         uid = os.geteuid()
 
         if count is None:
@@ -74,7 +78,7 @@ class PingResult:
         return ping_result.stdout
 
     @staticmethod
-    def run_test(ip, count=None):
+    def run_test(ip: str, count: Optional[int] = None) -> Optional[PingResult]:
         output = PingResult.execute_test(ip, count)
         if output is None:
             return None

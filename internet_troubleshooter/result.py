@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+import os
 import sys
 from time import time
 from datetime import datetime
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Dict, List, Mapping, Optional, TextIO, Union
+
 import yaml
 
 from internet_troubleshooter.ping_test import PingResult
@@ -17,7 +21,7 @@ class TestResult:
     speed_result: Optional[SpeedResult]
     time_stamp: float = field(default_factory=time)
 
-    def human_readable(self, io_target=sys.stdout):
+    def human_readable(self, io_target: TextIO = sys.stdout) -> None:
         if self.ping_result is not None:
             print(
                 "Packet Loss: {:.2f}%".format(self.ping_result.packet_loss),
@@ -39,7 +43,7 @@ class TestResult:
                 file=io_target,
             )
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "ping_result": (
                 None if self.ping_result is None else self.ping_result.to_dict()
@@ -54,7 +58,7 @@ class TestResult:
         }
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: Mapping[str, Any]) -> TestResult:
         ping_result = data.get("ping_result")
         trace_result = data.get("trace_result")
         speed_result = data.get("speed_result")
@@ -73,11 +77,11 @@ class TestResult:
             **({} if time_stamp is None else {"time_stamp": float(time_stamp)}),
         )
 
-    def to_yaml(self):
+    def to_yaml(self) -> str:
         return yaml.safe_dump(self.to_dict(), default_flow_style=False)
 
     @staticmethod
-    def load_yaml(content):
+    def load_yaml(content: str) -> List[TestResult]:
         """Parse the contents of a results file into TestResult objects."""
         documents = yaml.safe_load_all(content)
 
@@ -88,9 +92,11 @@ class TestResult:
         ]
 
     @staticmethod
-    def load_results(yaml_filename):
+    def load_results(
+        yaml_filename: Union[str, "os.PathLike[str]"],
+    ) -> List[TestResult]:
         with open(yaml_filename, encoding="utf-8") as f:
             return TestResult.load_yaml(f.read())
 
-    def get_date(self):
+    def get_date(self) -> datetime:
         return datetime.fromtimestamp(self.time_stamp)
