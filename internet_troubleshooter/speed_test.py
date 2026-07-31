@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import json
 import sys
 from dataclasses import dataclass
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, cast
+
 from internet_troubleshooter.utils import run_command, summarize
 
 SPEEDTEST_TIMEOUT = 300
@@ -20,7 +24,13 @@ class SpeedResult:
     download: float
     latency: float
 
-    def __init__(self, results=None, upload=None, download=None, latency=None):
+    def __init__(
+        self,
+        results: Optional[str] = None,
+        upload: Optional[float] = None,
+        download: Optional[float] = None,
+        latency: Optional[float] = None,
+    ) -> None:
         """Build from raw speedtest JSON, or directly from parsed values.
 
         The raw JSON is deliberately not retained: it contains the MAC address,
@@ -31,12 +41,14 @@ class SpeedResult:
         if results is not None:
             upload, download, latency = SpeedResult.parse_result(results)
 
-        self.upload = upload
-        self.download = download
-        self.latency = latency
+        # The values are optional only because the two construction paths
+        # supply them differently; the fields themselves always hold a float.
+        self.upload = cast(float, upload)
+        self.download = cast(float, download)
+        self.latency = cast(float, latency)
 
     @staticmethod
-    def parse_result(results):
+    def parse_result(results: str) -> Tuple[float, float, float]:
         """Return (upload, download, latency) from raw speedtest JSON."""
         try:
             parsed_result = json.loads(results)
@@ -52,7 +64,7 @@ class SpeedResult:
             )
             raise ValueError("Malformed speedtest JSON output.") from error
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "upload": self.upload,
             "download": self.download,
@@ -60,14 +72,14 @@ class SpeedResult:
         }
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: Mapping[str, Any]) -> SpeedResult:
         return cls(
             upload=float(data["upload"]),
             download=float(data["download"]),
             latency=float(data["latency"]),
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "\n".join(
             [
                 "{:<{}}{:.2f}Mbps".format("Download:", LABEL_WIDTH, self.download),
@@ -77,7 +89,7 @@ class SpeedResult:
         )
 
     @staticmethod
-    def check():
+    def check() -> bool:
         speedtest_exists = run_command(
             ["speedtest", "-h"], timeout=SPEEDTEST_HELP_TIMEOUT
         )
@@ -94,7 +106,7 @@ class SpeedResult:
         return True
 
     @staticmethod
-    def summarize(results):
+    def summarize(results: Sequence[Optional[SpeedResult]]) -> str:
         download = [result.download for result in results if result is not None]
         upload = [result.upload for result in results if result is not None]
         latency = [result.latency for result in results if result is not None]
@@ -105,7 +117,7 @@ class SpeedResult:
         )
 
     @staticmethod
-    def execute_test():
+    def execute_test() -> Optional[str]:
         speedtest_result = run_command(
             ["speedtest", "-f", "json"], timeout=SPEEDTEST_TIMEOUT
         )
@@ -122,7 +134,7 @@ class SpeedResult:
         return speedtest_result.stdout
 
     @staticmethod
-    def run_test():
+    def run_test() -> Optional[SpeedResult]:
         results = SpeedResult.execute_test()
         if results is None:
             return None

@@ -223,3 +223,40 @@ pytest --cov=internet_troubleshooter
 Run `ruff format .` to apply formatting and `ruff check --fix .` to apply the
 lint fixes ruff can make on its own. CI also runs `mypy` on Python 3.12 as a
 required check.
+
+### Type checking
+
+`internet_troubleshooter/` is fully annotated and type checked under mypy's
+`strict` preset, configured in `pyproject.toml`:
+
+```toml
+[tool.mypy]
+files = ["internet_troubleshooter"]
+strict = true
+ignore_missing_imports = true
+```
+
+`strict` turns on the whole strict family at once, including
+`disallow_untyped_defs`, `disallow_incomplete_defs`, `disallow_untyped_calls`,
+`disallow_any_generics`, `no_implicit_optional`, `warn_return_any`,
+`warn_unused_ignores`, `warn_redundant_casts`, `strict_equality`, and
+`no_implicit_reexport`. In practice that means every function and method in the
+package needs annotations on all of its parameters and on its return type.
+
+`ignore_missing_imports` stays on because plotly is an optional dependency that
+ships no stubs; its imports resolve to `Any` so the check still runs on machines
+without the `html` extra. The plotly boundary is confined to `render.py`, where
+`_import_plotly()` and the figure it builds are typed as `Any` and the values
+crossing back out are narrowed with `typing.cast`.
+
+Prefer `typing.cast` or a narrowing check over `# type: ignore`. There are
+currently no `# type: ignore` comments in the package, and any new one must
+carry a comment explaining why it cannot be avoided.
+
+Modules use `from __future__ import annotations` so annotations are never
+evaluated at runtime, which keeps constructs like
+`subprocess.CompletedProcess[str]` working on the supported Python 3.9
+baseline. Note that mypy itself requires Python 3.10 or newer, so the 3.9 leg of
+the test matrix installs everything except mypy.
+
+Tests under `test/` are not type checked.
