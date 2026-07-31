@@ -1,3 +1,4 @@
+import io
 import logging
 from argparse import Namespace
 
@@ -493,6 +494,73 @@ def test_display_reports_missing_file(tmp_path, capsys):
     assert "ERROR: Unable to read results" in capsys.readouterr().err
 
 
+def results_yaml(*packet_losses):
+    documents = []
+    for packet_loss in packet_losses:
+        result = InternetTestResult(
+            ping_result=PingResult(ip="8.8.8.8", packet_loss=packet_loss),
+            trace_result=None,
+            speed_result=None,
+        )
+        documents.append("---\n{}\n...\n".format(result.to_yaml()))
+    return "".join(documents)
+
+
+def test_display_human_from_stdin(mocker, capsys):
+    mocker.patch("sys.stdin", io.StringIO(results_yaml(10.0, 20.0)))
+
+    args = Namespace(yaml_file="-", format="human")
+    assert checkinternet.display(args) == 0
+
+    captured = capsys.readouterr()
+    assert "Mean: 15.00%" in captured.out
+    assert "Latency: Not enough data." in captured.out
+
+
+def test_display_html_from_stdin(mocker, capsys):
+    mocker.patch("sys.stdin", io.StringIO(results_yaml(1.0)))
+    to_html = mocker.patch("internet_troubleshooter.checkinternet.to_html")
+
+    args = Namespace(
+        yaml_file="-",
+        format="html",
+        embed_plotly=False,
+        target_download_mbps=50.0,
+        target_upload_mbps=15.0,
+        target_latency_ms=20.0,
+        target_packet_loss_pct=3.0,
+    )
+    assert checkinternet.display(args) == 0
+
+    assert to_html.call_args.args[0][0].ping_result.packet_loss == 1.0
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("content", ["", "   \n\t\n"])
+def test_display_reports_empty_stdin(mocker, capsys, content):
+    mocker.patch("sys.stdin", io.StringIO(content))
+
+    args = Namespace(yaml_file="-", format="human")
+    assert checkinternet.display(args) == 1
+
+    captured = capsys.readouterr()
+    assert "ERROR: No results on stdin" in captured.err
+    assert captured.out == ""
+
+
+def test_display_does_not_read_stdin_for_a_file(mocker, tmp_path, capsys):
+    yaml_file = tmp_path / "results.yaml"
+    yaml_file.write_text(results_yaml(10.0, 20.0), encoding="utf-8")
+    piped = results_yaml(90.0)
+    stdin = mocker.patch("sys.stdin", io.StringIO(piped))
+
+    args = Namespace(yaml_file=str(yaml_file), format="human")
+    assert checkinternet.display(args) == 0
+
+    assert "Mean: 15.00%" in capsys.readouterr().out
+    assert stdin.read() == piped
+
+
 def test_cli_input_run(mocker):
     mocker.patch(
         "sys.argv",
@@ -538,6 +606,14 @@ def test_cli_input_display_defaults(mocker):
     assert args.target_upload_mbps == 15
     assert args.target_latency_ms == 20
     assert args.target_packet_loss_pct == 3
+    assert args.func is checkinternet.display
+
+
+def test_cli_input_display_accepts_stdin_sentinel(mocker):
+    mocker.patch("sys.argv", ["checkinternet", "display", "--yaml_file", "-"])
+
+    args = checkinternet.cli_input()
+    assert args.yaml_file == "-"
     assert args.func is checkinternet.display
 
 
