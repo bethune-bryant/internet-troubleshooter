@@ -40,7 +40,16 @@ dependencies = [
 
 [project.optional-dependencies]
 html = ["plotly>=5.0,<7"]
-dev = ["pytest", "pytest-mock", "pytest-cov", "black", "flake8"]
+dev = [
+    "pytest",
+    "pytest-mock",
+    "pytest-cov",
+    "ruff",
+    # Current mypy releases require 3.10+, so the 3.9 leg of the test matrix
+    # goes without it. Type checking runs as its own job on a newer Python.
+    "mypy; python_version >= '3.10'",
+    "types-PyYAML; python_version >= '3.10'",
+]
 
 [project.urls]
 Homepage = "https://github.com/bethune-bryant/internet-troubleshooter"
@@ -60,6 +69,25 @@ testpaths = ["test"]
 [tool.coverage.run]
 source = ["internet_troubleshooter"]
 
-[tool.black]
+[tool.ruff]
 line-length = 88
-target-version = ["py39"]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90"]
+# E203 (whitespace before ':') conflicts with the formatter's slice style.
+ignore = ["E203"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Holds verbatim `ping` output as test fixtures, which must not be rewrapped.
+"test/test_ping_test.py" = ["E501"]
+
+[tool.mypy]
+files = ["internet_troubleshooter"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true

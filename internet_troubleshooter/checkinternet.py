@@ -106,8 +106,7 @@ def cli_input():
         "--target_download_mbps",
         default=PLOT_DOWNLOAD_MBPS,
         type=float,
-        help="Download speed the HTML report treats as healthy. "
-        "(default: %(default)s)",
+        help="Download speed the HTML report treats as healthy. (default: %(default)s)",
     )
     display_cmd.add_argument(
         "--target_upload_mbps",

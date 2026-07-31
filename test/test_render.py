@@ -169,8 +169,7 @@ def test_hover_texts_list_every_metric_per_run():
         "Latency: 10.00 ms<br>Packet loss: 0.00%"
     )
     assert texts[1] == (
-        "Download: no data<br>Upload: no data<br>"
-        "Latency: no data<br>Packet loss: 5.00%"
+        "Download: no data<br>Upload: no data<br>Latency: no data<br>Packet loss: 5.00%"
     )
 
 
