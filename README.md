@@ -89,6 +89,7 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | --- | --- | --- | --- |
 | `--version` | global | n/a | Print the installed version and exit. Works without a subcommand. |
 | `--debug` | global | off | Print progress and the raw output of each command to stderr. |
+| `--config` | global | `~/.config/checkinternet/config.yaml` | [Config file](#configuration-file) of defaults to read instead of the default location. |
 | `--ping_ip` | `run` | `8.8.8.8` | IP address or hostname to test against. Must be a valid address or hostname. |
 | `--ping_count` | `run` | 400 as root, else 10 | Number of packets to send to the target. Must be at least 1. |
 | `--trace_hop_ping_count` | `run` | 50 as root, else 10 | Number of packets to send to each traceroute hop. Must be at least 1. |
@@ -96,7 +97,7 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | `--skip_speedtest` | `run` | off | Skip the Speedtest CLI test. |
 | `--skip_pingtest` | `run` | off | Skip the ping test. This also skips the traceroute, since the traceroute is triggered by the ping result. |
 | `--yaml_file` | `run` | none | Append this run's results to the given file. Without it, results are printed but not recorded. |
-| `--yaml_file` | `display` | required | File of logged results to read, or `-` to read them from stdin. |
+| `--yaml_file` | `display` | required | File of logged results to read, or `-` to read them from stdin. Required unless the config file sets it. |
 | `--format` | `display` | `human` | `human` for a text summary or `html` for an interactive plot. Both are written to stdout. |
 | `--embed_plotly` | `display` | off | Inline plotly.js in the HTML report so it opens without network access, instead of loading it from the plotly CDN. |
 | `--target_download_mbps` | `display` | `50` | Download speed the HTML report treats as healthy. |
@@ -112,13 +113,90 @@ Each intermediate hop found by the traceroute is then pinged as well. The target
 
 The hop sample size is set by `--trace_hop_ping_count` and is independent of `--ping_count`. Its default is smaller than the target's so that a long trace does not multiply the runtime of the whole check: 50 packets per hop as root, or 10 otherwise. Root still floods (`ping -f`) for hops, so 50 packets per hop stays fast. Pass the flag explicitly to use the same count for every hop regardless of user, for example `checkinternet run --ping_count 400 --trace_hop_ping_count 100`.
 
+## Configuration File
+
+Options that would otherwise be repeated on every invocation can be written to a
+YAML config file instead. `checkinternet` reads
+`~/.config/checkinternet/config.yaml` when that file exists, or the file named by
+the global `--config` flag, which like `--debug` must come *before* the
+subcommand:
+
+```shell
+checkinternet --config /etc/checkinternet/config.yaml run
+```
+
+`$XDG_CONFIG_HOME` is honored when it is set, so the default location is really
+`$XDG_CONFIG_HOME/checkinternet/config.yaml`.
+
+The file holds one section per subcommand. Each section maps an option to the
+value to use, named exactly as the corresponding command line flag is but
+without the leading dashes. Every option of `run` and `display` may be set, and
+anything left out keeps its usual default:
+
+```yaml
+run:
+  ping_ip: 1.1.1.1
+  ping_count: 400
+  trace_hop_ping_count: 50
+  max_packet_loss: 2.0
+  skip_speedtest: false
+  skip_pingtest: false
+  yaml_file: /var/log/internet-troubleshooter/results.yaml
+
+display:
+  yaml_file: /var/log/internet-troubleshooter/results.yaml
+  format: html
+  embed_plotly: true
+  target_download_mbps: 500
+  target_upload_mbps: 100
+  target_latency_ms: 15
+  target_packet_loss_pct: 0.5
+```
+
+Sections are independent: running `checkinternet run` reads only the `run`
+section, so the two commands can name different `yaml_file` values, though
+pointing both at the same results file is the usual reason to write one.
+
+### Precedence
+
+Values are resolved in this order, with later entries winning:
+
+1. The built in defaults listed in the [command line reference](#command-line-reference).
+2. The config file.
+3. Flags passed explicitly on the command line.
+
+So with the config file above, `checkinternet run` pings `1.1.1.1`, while
+`checkinternet run --ping_ip 8.8.8.8` pings `8.8.8.8` — passing a flag always
+wins, even when the value passed happens to be the built in default. The `false`
+entries above are worth noting for the same reason: a config file cannot undo a
+flag, so `skip_speedtest: false` only restates the default, and
+`checkinternet run --skip_speedtest` still skips the speed test.
+
+`display --yaml_file` follows the same order rather than being required
+outright, so it can be left off when the `display` section names the results
+file. It is only an error when neither the command line nor the config file
+supplies one.
+
+### Errors
+
+Having no config file at all is not an error; the built in defaults are used.
+Naming one with `--config` that does not exist is an error, as is a file that is
+not valid YAML, sets an unknown section or option, or gives an option a value of
+the wrong type. Each of these prints the file, the offending key, and what was
+expected, then exits 2 without running anything:
+
+```shell
+$ checkinternet --config config.yaml run
+ERROR: Config file 'config.yaml' sets 'ping_count' in section 'run' to 'many', expected a whole number.
+```
+
 ## Exit Codes
 
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. This includes runs where a test was skipped, such as when the `speedtest` CLI is not installed. |
 | 1 | `--ping_ip` is not a valid address or hostname; `--ping_count` or `--trace_hop_ping_count` is less than 1; the results file could not be written or read; or every test that was attempted failed. |
-| 2 | The command line itself could not be parsed, for example a missing subcommand or an unknown flag. |
+| 2 | The command line itself could not be parsed, for example a missing subcommand or an unknown flag; or the [config file](#configuration-file) could not be read or understood. |
 
 ## Tracking and Displaying Statistics
 
@@ -304,6 +382,70 @@ crontab -e
 ```bash
 0 0-7 * * * source /home/USER/git/internet-troubleshooter/my_env/bin/activate && checkinternet --debug run --yaml_file /home/USER/troubleshooting.yaml >> /home/USER/troubleshooting.log 2>&1
 ```
+
+### Scheduling with a config file
+
+A [config file](#configuration-file) keeps the scheduled command short and puts
+the settings somewhere they can be changed without editing the schedule. Write
+`~/.config/checkinternet/config.yaml`:
+
+```yaml
+run:
+  ping_ip: 1.1.1.1
+  max_packet_loss: 2.0
+  yaml_file: /home/USER/troubleshooting.yaml
+
+display:
+  yaml_file: /home/USER/troubleshooting.yaml
+  format: html
+  embed_plotly: true
+```
+
+The crontab entry then names no options at all, and the same file is picked up
+when the report is generated by hand:
+
+```bash
+0 0-7 * * * source /home/USER/git/internet-troubleshooter/my_env/bin/activate && checkinternet --debug run >> /home/USER/troubleshooting.log 2>&1
+```
+
+```shell
+$ checkinternet display > /home/USER/troubleshooting.html
+```
+
+For a systemd timer, point `--config` at a file of its own so the unit does not
+depend on which user's home directory it runs from.
+`/etc/systemd/system/checkinternet.service`:
+
+```ini
+[Unit]
+Description=Check internet performance
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/internet-troubleshooter/bin/checkinternet --config /etc/checkinternet/config.yaml run
+```
+
+`/etc/systemd/system/checkinternet.timer`:
+
+```ini
+[Unit]
+Description=Check internet performance hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable it with `sudo systemctl enable --now checkinternet.timer`. The service
+writes its results to whatever `run.yaml_file` names in
+`/etc/checkinternet/config.yaml`, so that directory has to be writable by the
+user the unit runs as, and stdout lands in the journal
+(`journalctl -u checkinternet`).
 
 ## Development
 
