@@ -2,7 +2,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from internet_troubleshooter.ping_test import PingResult, default_ping_count_for_uid
 from internet_troubleshooter.utils import run_command
@@ -131,7 +131,7 @@ def default_hop_ping_count():
 
 @dataclass
 class TraceResult:
-    ping_results: List[PingResult]
+    ping_results: List[Optional[PingResult]]
 
     def to_dict(self):
         return {

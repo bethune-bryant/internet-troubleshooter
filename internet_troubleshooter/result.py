@@ -2,6 +2,7 @@ import sys
 from time import time
 from datetime import datetime
 from dataclasses import dataclass, field
+from typing import Optional
 import yaml
 
 from internet_troubleshooter.ping_test import PingResult
@@ -11,9 +12,9 @@ from internet_troubleshooter.speed_test import SpeedResult
 
 @dataclass
 class TestResult:
-    ping_result: PingResult
-    trace_result: TraceResult
-    speed_result: SpeedResult
+    ping_result: Optional[PingResult]
+    trace_result: Optional[TraceResult]
+    speed_result: Optional[SpeedResult]
     time_stamp: float = field(default_factory=time)
 
     def human_readable(self, io_target=sys.stdout):
