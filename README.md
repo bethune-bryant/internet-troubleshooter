@@ -62,8 +62,17 @@ pip install -e ".[dev,html]"
 ## Getting Started
 
 ```shell
-checkinternet run
+$ checkinternet run
+Packet Loss: 1.50%
+Download:    58.54Mbps
+Upload:      17.12Mbps
+Latency:     19.27ms
+Server:      Conterra (Stemmons, TX)
+ISP:         MyISP
+External IP: 555.555.555.555
 ```
+
+The last three lines report where the speed test actually ran, and are printed whenever the Speedtest CLI supplies them. Add `--yaml_file` to also append the run to a results file, which records the CLI's [complete output](#the-full-speedtest-payload).
 
 > For more accurate packet loss, run `checkinternet` as `root`. Only root may flood ping (`ping -f`), which is what makes it possible to measure loss over hundreds of packets in a few seconds. As a normal user the test falls back to a plain `ping` with a much smaller sample, and prints a warning to that effect.
 
@@ -157,6 +166,8 @@ HTML output requires the `html` extra; without it `display --format html` fails 
 
 The HTML report is a single dark themed page with three sections: metric cards showing the mean, minimum, and maximum of each measurement against its healthy threshold; three stacked charts sharing one time axis, holding download and upload, latency, and packet loss; and a scrollable table of traceroute hops with one column per run, whose addresses and loss figures can be selected and copied.
 
+The summary heading also carries labels for the run count and time range, the ping target, and the speedtest server, ISP, and external IP. Those last three come from the recorded speedtest output and are only shown when every run agrees on them, so a report spanning a change of ISP or test server leaves out whichever detail moved.
+
 Hovering any of the charts reports every metric recorded for that run together, so a latency spike can be read against the speed and packet loss measured at the same moment. Runs where a test did not complete are marked with a dotted red line and report the metrics they are missing as `no data`.
 
 ![HTML Plot](docs/DiplayHTML.PNG)
@@ -197,15 +208,56 @@ ping_result:
   ip: 8.8.8.8
   packet_loss: 1.5
 speed_result:
-  download: 58.54
-  latency: 19.27
-  upload: 17.12
+  download: 58.542856
+  latency: 19.266
+  upload: 17.1212
+  raw_result:
+    isp: MyISP
+    interface:
+      externalIp: 555.555.555.555
+      internalIp: 192.168.1.1
+      isVpn: false
+      macAddr: AA:AA:AA:AA:AA:AA
+      name: enp3s0
+    server:
+      country: United States
+      host: speedtest-stemmons-tx.conterra.com
+      id: 27863
+      ip: 69.194.191.83
+      location: Stemmons, TX
+      name: Conterra
+      port: 8080
+    result:
+      id: 555-555
+      persisted: true
+      url: https://www.speedtest.net/result/c/555-555
+    # ...along with the CLI's full download, upload, ping, and timestamp keys.
 time_stamp: 1700000000.0
 trace_result:
   ping_results:
   - ip: 10.0.0.1
     packet_loss: 0.0
 ```
+
+#### The full speedtest payload
+
+Every successful speed test records the complete JSON document the Speedtest CLI
+printed, under `speed_result.raw_result`. `download`, `upload`, and `latency`
+stay alongside it as the plain Mbps and millisecond figures the summaries and
+plots read, so nothing about display depends on the payload.
+
+> **The results file contains personal, network-identifying information.** The
+> speedtest payload includes the MAC address, local IP, and external IP of the
+> machine that ran the test, its ISP, the test server it reached, and a public
+> speedtest.net URL for the result. This is deliberate — it is what makes an old
+> result interpretable, since a slow run against a distant server on a different
+> ISP is a different story from a slow run against the usual one. Treat a results
+> file like any other personal record: keep it out of public repositories and
+> issue reports, and redact it before sharing.
+
+Results written before this was recorded have no `raw_result` key and still load
+normally; they simply report no speedtest context. `raw_result` is also absent
+from results that were not built from CLI output.
 
 ## Automatic Checking
 

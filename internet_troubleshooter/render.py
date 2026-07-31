@@ -591,6 +591,28 @@ def _ping_target(results: Sequence[TestResult]) -> Optional[str]:
     return None
 
 
+def _speed_context(results: Sequence[TestResult]) -> List[Tuple[str, str]]:
+    """The speedtest details the runs agree on, as (label, value) pairs.
+
+    Comes from the full JSON kept with each speed result, so it is empty for
+    results logged before that was recorded. A detail the runs disagree on is
+    dropped rather than reported as one value for the whole report.
+    """
+    contexts = [
+        dict(result.speed_result.context())
+        for result in results
+        if result.speed_result is not None
+    ]
+    labels = list(dict.fromkeys(label for context in contexts for label in context))
+
+    shared = []
+    for label in labels:
+        values = {context[label] for context in contexts if label in context}
+        if len(values) == 1:
+            shared.append((label, values.pop()))
+    return shared
+
+
 def _format_summary_stats(
     results: Sequence[TestResult], thresholds: RenderThresholds = DEFAULT_THRESHOLDS
 ) -> Dict[str, Any]:
@@ -628,6 +650,7 @@ def _format_summary_stats(
         "runs": len(results),
         "incomplete": len(incomplete),
         "ping_target": _ping_target(results),
+        "speed_context": _speed_context(results),
         "first_run": _format_run_time(results[0]) if results else None,
         "last_run": _format_run_time(results[-1]) if results else None,
     }
@@ -688,6 +711,10 @@ def _summary_chips(summary: Mapping[str, Any]) -> List[str]:
     fragments = ["{} run(s)".format(summary["runs"])]
     if summary["ping_target"] is not None:
         fragments.append("Target {}".format(escape(summary["ping_target"])))
+    fragments.extend(
+        "{} {}".format(escape(label), escape(value))
+        for label, value in summary["speed_context"]
+    )
     if summary["incomplete"]:
         fragments.append("{} incomplete run(s)".format(summary["incomplete"]))
     if summary["first_run"] == summary["last_run"]:

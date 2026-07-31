@@ -23,6 +23,18 @@ def make_result(time_stamp, packet_loss=None):
     )
 
 
+SPEEDTEST_PAYLOAD = {
+    "isp": "MyISP",
+    "interface": {
+        "externalIp": "555.555.555.555",
+        "internalIp": "192.168.1.1",
+        "macAddr": "AA:AA:AA:AA:AA:AA",
+    },
+    "server": {"name": "Conterra", "location": "Stemmons, TX"},
+    "packetLoss": 0,
+}
+
+
 def make_full_result(time_stamp=1700000000.0):
     return InternetTestResult(
         ping_result=PingResult(ip="8.8.8.8", packet_loss=1.5),
@@ -62,6 +74,48 @@ def test_human_readable_skips_missing_hops():
     text = output.getvalue()
     assert "Packet Loss: 5.00%" in text
     assert "1.50% 10.0.0.1" in text
+
+
+def test_human_readable_reports_the_speedtest_context():
+    result = InternetTestResult(
+        ping_result=None,
+        trace_result=None,
+        speed_result=SpeedResult(
+            upload=17.1212,
+            download=58.542856,
+            latency=19.266,
+            raw_result=SPEEDTEST_PAYLOAD,
+        ),
+    )
+
+    output = io.StringIO()
+    result.human_readable(output)
+    text = output.getvalue()
+    assert "Download:    58.54Mbps" in text
+    assert "Server:      Conterra (Stemmons, TX)" in text
+    assert "ISP:         MyISP" in text
+    assert "External IP: 555.555.555.555" in text
+
+
+def test_speed_result_payload_round_trips_through_yaml(tmp_path):
+    yaml_file = tmp_path / "results.yaml"
+    result = make_full_result()
+    result.speed_result = SpeedResult(
+        upload=17.1212,
+        download=58.542856,
+        latency=19.266,
+        raw_result=SPEEDTEST_PAYLOAD,
+    )
+    write_results(yaml_file, [result])
+
+    text = yaml_file.read_text(encoding="utf-8")
+    assert "raw_result:" in text
+    assert "AA:AA:AA:AA:AA:AA" in text
+    assert "!!python/object" not in text
+
+    loaded = InternetTestResult.load_results(str(yaml_file))
+    assert loaded == [result]
+    assert loaded[0].speed_result.raw_result == SPEEDTEST_PAYLOAD
 
 
 def test_to_dict_uses_snake_case_keys():

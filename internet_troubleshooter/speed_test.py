@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, cast
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
 from internet_troubleshooter.utils import run_command, summarize
 
@@ -23,6 +23,7 @@ class SpeedResult:
     upload: float
     download: float
     latency: float
+    raw_result: Optional[Dict[str, Any]] = None
 
     def __init__(
         self,
@@ -30,29 +31,33 @@ class SpeedResult:
         upload: Optional[float] = None,
         download: Optional[float] = None,
         latency: Optional[float] = None,
+        raw_result: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Build from raw speedtest JSON, or directly from parsed values.
 
-        The raw JSON is deliberately not retained: it contains the MAC address,
-        local and external IPs, and ISP of the machine running the test.
+        The complete parsed JSON is kept in raw_result so that a logged run
+        records everything the speedtest CLI reported, including the server it
+        reached, the ISP, and the MAC address and IPs of this machine.
 
         Raises ValueError when results is not usable speedtest JSON.
         """
         if results is not None:
-            upload, download, latency = SpeedResult.parse_result(results)
+            raw_result, upload, download, latency = SpeedResult.parse_result(results)
 
         # The values are optional only because the two construction paths
         # supply them differently; the fields themselves always hold a float.
         self.upload = cast(float, upload)
         self.download = cast(float, download)
         self.latency = cast(float, latency)
+        self.raw_result = raw_result
 
     @staticmethod
-    def parse_result(results: str) -> Tuple[float, float, float]:
-        """Return (upload, download, latency) from raw speedtest JSON."""
+    def parse_result(results: str) -> Tuple[Dict[str, Any], float, float, float]:
+        """Return the whole parsed JSON and its (upload, download, latency)."""
         try:
             parsed_result = json.loads(results)
             return (
+                cast(Dict[str, Any], parsed_result),
                 float(parsed_result["upload"]["bandwidth"]) / BYTES_PER_SEC_TO_MBPS,
                 float(parsed_result["download"]["bandwidth"]) / BYTES_PER_SEC_TO_MBPS,
                 float(parsed_result["ping"]["latency"]),
@@ -65,28 +70,80 @@ class SpeedResult:
             raise ValueError("Malformed speedtest JSON output.") from error
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "upload": self.upload,
             "download": self.download,
             "latency": self.latency,
         }
+        # Results built from explicit measurements have no JSON behind them,
+        # and writing the key as null would only pad every logged document.
+        if self.raw_result is not None:
+            data["raw_result"] = self.raw_result
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> SpeedResult:
+        raw_result = data.get("raw_result")
         return cls(
             upload=float(data["upload"]),
             download=float(data["download"]),
             latency=float(data["latency"]),
+            raw_result=None if raw_result is None else dict(raw_result),
         )
 
+    def _raw_value(self, *keys: str) -> Optional[str]:
+        """A nested value from the raw JSON as text, or None when it is absent."""
+        value: Any = self.raw_result
+        for key in keys:
+            if not isinstance(value, dict):
+                return None
+            value = value.get(key)
+        if value is None or value == "":
+            return None
+        return str(value)
+
+    @property
+    def server(self) -> Optional[str]:
+        """The test server as 'name (location)', from whichever parts are known."""
+        name = self._raw_value("server", "name")
+        location = self._raw_value("server", "location")
+        if name is None:
+            return location
+        if location is None:
+            return name
+        return "{} ({})".format(name, location)
+
+    @property
+    def isp(self) -> Optional[str]:
+        return self._raw_value("isp")
+
+    @property
+    def external_ip(self) -> Optional[str]:
+        return self._raw_value("interface", "externalIp")
+
+    def context(self) -> List[Tuple[str, str]]:
+        """Labelled details of where the test ran, for display alongside it.
+
+        Empty unless the raw JSON was kept and holds the value in question.
+        """
+        details = [
+            ("Server", self.server),
+            ("ISP", self.isp),
+            ("External IP", self.external_ip),
+        ]
+        return [(label, value) for label, value in details if value is not None]
+
     def __str__(self) -> str:
-        return "\n".join(
-            [
-                "{:<{}}{:.2f}Mbps".format("Download:", LABEL_WIDTH, self.download),
-                "{:<{}}{:.2f}Mbps".format("Upload:", LABEL_WIDTH, self.upload),
-                "{:<{}}{:.2f}ms".format("Latency:", LABEL_WIDTH, self.latency),
-            ]
+        lines = [
+            "{:<{}}{:.2f}Mbps".format("Download:", LABEL_WIDTH, self.download),
+            "{:<{}}{:.2f}Mbps".format("Upload:", LABEL_WIDTH, self.upload),
+            "{:<{}}{:.2f}ms".format("Latency:", LABEL_WIDTH, self.latency),
+        ]
+        lines.extend(
+            "{:<{}}{}".format("{}:".format(label), LABEL_WIDTH, value)
+            for label, value in self.context()
         )
+        return "\n".join(lines)
 
     @staticmethod
     def check() -> bool:
