@@ -38,16 +38,18 @@ def make_result(
     hops=None,
     ip="8.8.8.8",
     raw_speed=None,
+    ping_rtt=None,
 ):
     """A TestResult holding only the pieces a test cares about.
 
     speed is (download, upload, latency); hops is a list of (ip, packet_loss)
     pairs, where None stands for a hop that could not be pinged. raw_speed is
-    the full speedtest JSON payload logged with a speed result.
+    the full speedtest JSON payload logged with a speed result. ping_rtt is the
+    average round trip time of the ping test, absent unless it was measured.
     """
     ping_result = None
     if packet_loss is not None:
-        ping_result = PingResult(ip=ip, packet_loss=packet_loss)
+        ping_result = PingResult(ip=ip, packet_loss=packet_loss, rtt_avg_ms=ping_rtt)
 
     speed_result = None
     if speed is not None:
@@ -95,12 +97,12 @@ def test_to_html_with_no_data():
 
 def test_to_html_plot_legends_name_the_metric_without_the_average():
     results = [
-        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
-        make_result(2.0, packet_loss=10.0, speed=(60.0, 10.0, 30.0)),
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0), ping_rtt=12.0),
+        make_result(2.0, packet_loss=10.0, speed=(60.0, 10.0, 30.0), ping_rtt=40.0),
     ]
 
     text = render(results)
-    for label in ("Download", "Upload", "Latency", "Packet Loss"):
+    for label in ("Download", "Upload", "Latency", "Ping RTT", "Packet Loss"):
         assert '"name":"{}"'.format(label) in text
     assert "(avg:" not in text
 
@@ -147,6 +149,42 @@ def test_to_html_summary_cards_omit_the_sample_count():
     assert _format_summary_stats(results)["metrics"][0]["samples"] == 1
 
 
+def test_to_html_summary_cards_report_the_ping_round_trip_time():
+    results = [
+        make_result(1.0, packet_loss=0.0, ping_rtt=10.0),
+        make_result(2.0, packet_loss=4.0, ping_rtt=30.0),
+    ]
+
+    text = render(results)
+    assert '<h3 class="card__label">Ping RTT</h3>' in text
+    assert '<p class="card__value">20.00<span class="card__unit">ms</span></p>' in text
+    assert "<dd>10.00ms</dd>" in text
+    assert "<dd>30.00ms</dd>" in text
+    # The ping round trip is held to the same target as the speedtest latency.
+    assert text.count("Target &le; 20ms") == 2
+
+
+def test_to_html_summary_omits_a_ping_round_trip_that_was_never_measured():
+    text = render([make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0))])
+
+    ping_card = text.split('<h3 class="card__label">Ping RTT</h3>')[1]
+    assert ping_card.startswith('<p class="card__value">&mdash;')
+
+
+def test_to_html_plots_the_ping_round_trip_beside_the_speedtest_latency():
+    results = [
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0), ping_rtt=12.0),
+        make_result(2.0, packet_loss=4.0, speed=(60.0, 10.0, 30.0), ping_rtt=40.0),
+    ]
+
+    text = render(results)
+    # Both latency measures share the millisecond axis on the second row, so
+    # neither the row count nor the axis count changes.
+    assert '"name":"Ping RTT"' in text
+    assert '"color":"#5eead4"' in text
+    assert '"yaxis4"' not in text
+
+
 def test_to_html_charts_split_speed_latency_and_loss_across_three_rows():
     results = [
         make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
@@ -167,7 +205,7 @@ def test_to_html_charts_split_speed_latency_and_loss_across_three_rows():
 
 def test_to_html_charts_hover_reports_every_metric_for_the_run():
     results = [
-        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0), ping_rtt=12.0),
         make_result(2.0, packet_loss=4.0),
     ]
 
@@ -176,37 +214,46 @@ def test_to_html_charts_hover_reports_every_metric_for_the_run():
     assert '"connectgaps":false' in text
     assert (
         "Download: 80.00 Mbps\\u003cbr\\u003eUpload: 20.00 Mbps"
-        "\\u003cbr\\u003eLatency: 10.00 ms\\u003cbr\\u003ePacket loss: 0.00%"
+        "\\u003cbr\\u003eLatency: 10.00 ms\\u003cbr\\u003ePing RTT: 12.00 ms"
+        "\\u003cbr\\u003ePacket loss: 0.00%"
     ) in text
     # The run without a speed test still hovers, reporting what it does have.
     assert "Download: no data\\u003cbr\\u003e" in text
+    # As does the run whose ping measured no round trip time.
+    assert "Ping RTT: no data\\u003cbr\\u003ePacket loss: 4.00%" in text
 
 
 def test_hover_texts_list_every_metric_per_run():
-    texts = _hover_texts([80.0, None], [20.0, None], [10.0, None], [0.0, 5.0])
+    texts = _hover_texts(
+        [80.0, None], [20.0, None], [10.0, None], [12.0, None], [0.0, 5.0]
+    )
 
     assert texts[0] == (
         "Download: 80.00 Mbps<br>Upload: 20.00 Mbps<br>"
-        "Latency: 10.00 ms<br>Packet loss: 0.00%"
+        "Latency: 10.00 ms<br>Ping RTT: 12.00 ms<br>Packet loss: 0.00%"
     )
     assert texts[1] == (
-        "Download: no data<br>Upload: no data<br>Latency: no data<br>Packet loss: 5.00%"
+        "Download: no data<br>Upload: no data<br>Latency: no data<br>"
+        "Ping RTT: no data<br>Packet loss: 5.00%"
     )
 
 
 def test_aligned_series_pads_runs_that_skipped_a_test():
     results = [
-        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0)),
+        make_result(1.0, packet_loss=0.0, speed=(80.0, 20.0, 10.0), ping_rtt=12.0),
         make_result(2.0, packet_loss=4.0),
         make_result(3.0, speed=(60.0, 10.0, 30.0)),
     ]
 
-    dates, download, upload, latency, packet_loss = _aligned_series(results)
+    dates, download, upload, latency, ping_rtt, packet_loss = _aligned_series(results)
     # Every metric is aligned to the same three run times.
     assert len(dates) == 3
     assert download == [80.0, None, 60.0]
     assert upload == [20.0, None, 10.0]
     assert latency == [10.0, None, 30.0]
+    # The second run pinged but measured no round trip time; the third did not
+    # ping at all.
+    assert ping_rtt == [12.0, None, None]
     assert packet_loss == [0.0, 4.0, None]
 
 
@@ -492,10 +539,15 @@ def test_build_trace_tables_html_marks_hops_over_the_threshold():
 
 
 def test_to_human():
-    results = [make_result(1.0, packet_loss=10.0), make_result(2.0, packet_loss=20.0)]
+    results = [
+        make_result(1.0, packet_loss=10.0, ping_rtt=10.0),
+        make_result(2.0, packet_loss=20.0, ping_rtt=20.0),
+    ]
 
     output = io.StringIO()
     to_human(results, output)
     text = output.getvalue()
     assert "Mean: 15.00%" in text
+    assert "Ping RTT:" in text
+    assert "Mean: 15.00ms" in text
     assert "Download: Not enough data." in text

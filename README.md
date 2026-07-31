@@ -6,7 +6,7 @@
 
 This is an internet performance tracking and troubleshooting utility which uses tools like `ping`, `traceroute`, and the [SpeedTest CLI](https://www.speedtest.net/apps/cli#ubuntu).
 
-A single run measures packet loss to a target address and download, upload, and latency figures from the Speedtest CLI. When packet loss is high, it also traceroutes to the target and measures packet loss to each intermediate hop, which helps show whether the problem is inside your network or upstream of it. Results can be appended to a YAML file and later summarized as text or as an interactive HTML plot.
+A single run measures packet loss and round trip time to a target address, and download, upload, and latency figures from the Speedtest CLI. When packet loss is high, it also traceroutes to the target and measures packet loss to each intermediate hop, which helps show whether the problem is inside your network or upstream of it. Results can be appended to a YAML file and later summarized as text or as an interactive HTML plot.
 
 ## Prerequisites
 
@@ -64,6 +64,7 @@ pip install -e ".[dev,html]"
 ```shell
 $ checkinternet run
 Packet Loss: 1.50%
+Ping RTT:    20.31ms
 Download:    58.54Mbps
 Upload:      17.12Mbps
 Latency:     19.27ms
@@ -72,7 +73,7 @@ ISP:         MyISP
 External IP: 555.555.555.555
 ```
 
-The last three lines report where the speed test actually ran, and are printed whenever the Speedtest CLI supplies them. Add `--yaml_file` to also append the run to a results file, which records the CLI's [complete output](#the-full-speedtest-payload).
+`Ping RTT` is the average round trip time of the ping test, and is only printed when the ping reported one — a ping that lost every packet has no round trip to report. The last three lines report where the speed test actually ran, and are printed whenever the Speedtest CLI supplies them. Add `--yaml_file` to also append the run to a results file, which records the CLI's [complete output](#the-full-speedtest-payload).
 
 > For more accurate packet loss, run `checkinternet` as `root`. Only root may flood ping (`ping -f`), which is what makes it possible to measure loss over hundreds of packets in a few seconds. As a normal user the test falls back to a plain `ping` with a much smaller sample, and prints a warning to that effect.
 
@@ -100,7 +101,7 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | `--embed_plotly` | `display` | off | Inline plotly.js in the HTML report so it opens without network access, instead of loading it from the plotly CDN. |
 | `--target_download_mbps` | `display` | `50` | Download speed the HTML report treats as healthy. |
 | `--target_upload_mbps` | `display` | `15` | Upload speed the HTML report treats as healthy. |
-| `--target_latency_ms` | `display` | `20` | Highest latency the HTML report treats as healthy. |
+| `--target_latency_ms` | `display` | `20` | Highest latency the HTML report treats as healthy. Applies to both the speedtest latency and the ping round trip time. |
 | `--target_packet_loss_pct` | `display` | `3` | Highest packet loss the HTML report treats as healthy. |
 
 ### How `--max_packet_loss` gates the traceroute
@@ -150,8 +151,16 @@ Packet Loss:
   Variance: 0.08%
   Min: 0.00%
   Max: 1.00%
+
+Ping RTT:
+  Mean: 20.31ms
+  Variance: 2.06ms
+  Min: 16.54ms
+  Max: 35.19ms
 $ checkinternet display --yaml_file troubleshooting.yaml --format html > troubleshooting.html
 ```
+
+`Ping RTT` summarizes each run's average round trip time, over the runs that recorded one; a run whose ping reported no round trip time is left out of it, and a file of results logged before round trip times were recorded reports `Not enough data`.
 
 Passing `-` as the file reads the results from stdin instead, so `display` fits into a pipeline:
 
@@ -165,6 +174,8 @@ Reading from stdin with nothing piped in fails with an error rather than reporti
 HTML output requires the `html` extra; without it `display --format html` fails with an error stating that plotly is not installed.
 
 The HTML report is a single dark themed page with three sections: metric cards showing the mean, minimum, and maximum of each measurement against its healthy threshold; three stacked charts sharing one time axis, holding download and upload, latency, and packet loss; and a scrollable table of traceroute hops with one column per run, whose addresses and loss figures can be selected and copied.
+
+The ping round trip time is reported as its own metric card and is drawn on the latency chart next to the speedtest latency, since the two measure the same thing against different targets on the same millisecond scale. Both are held to `--target_latency_ms`.
 
 The summary heading also carries labels for the run count and time range, the ping target, and the speedtest server, ISP, and external IP. Those last three come from the recorded speedtest output and are only shown when every run agrees on them, so a report spanning a change of ISP or test server leaves out whichever detail moved.
 
@@ -207,6 +218,10 @@ A single document looks like this. Keys are sorted alphabetically, and any test 
 ping_result:
   ip: 8.8.8.8
   packet_loss: 1.5
+  rtt_avg_ms: 20.312
+  rtt_max_ms: 35.193
+  rtt_mdev_ms: 2.061
+  rtt_min_ms: 16.544
 speed_result:
   download: 58.542856
   latency: 19.266
@@ -237,7 +252,26 @@ trace_result:
   ping_results:
   - ip: 10.0.0.1
     packet_loss: 0.0
+    rtt_avg_ms: 1.412
+    rtt_max_ms: 3.201
+    rtt_mdev_ms: 0.284
+    rtt_min_ms: 0.981
 ```
+
+#### Ping round trip times
+
+The `rtt_*` keys hold the round trip statistics of the `rtt min/avg/max/mdev`
+line `ping` prints below the packet loss figure, in milliseconds, and are
+recorded for the traced hops in `trace_result` as well as for the target.
+
+Each one is written only when `ping` reported it, so a key is simply absent
+rather than `null` when it was not measured. A ping that lost every packet
+reports no statistics line at all and logs none of them, and `rtt_mdev_ms` is
+also missing where `ping` does not report a deviation.
+
+Results written before these were recorded have no `rtt_*` keys and still load
+normally; they report no round trip time in the summaries and leave a gap in the
+latency chart.
 
 #### The full speedtest payload
 

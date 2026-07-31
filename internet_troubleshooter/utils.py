@@ -12,6 +12,10 @@ DEFAULT_TIMEOUT = 120
 
 LOG_FORMAT = "%(levelname)s: %(message)s"
 
+# Pads the labels of the measurements printed for a single run so their values
+# line up, whichever test each line came from.
+LABEL_WIDTH = 13
+
 MAX_HOSTNAME_LENGTH = 253
 HOSTNAME_LABEL_REGEX = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
