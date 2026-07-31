@@ -707,11 +707,12 @@ def _build_trace_tables_html(results, thresholds=DEFAULT_THRESHOLDS):
     )
 
 
-def _build_charts_html(results, thresholds=DEFAULT_THRESHOLDS):
+def _build_charts_html(results, thresholds=DEFAULT_THRESHOLDS, embed_plotly=False):
+    """The charts, loading plotly.js from the CDN or inlining it when asked."""
     fig = _build_charts_figure(results, thresholds)
     return fig.to_html(
         full_html=False,
-        include_plotlyjs="cdn",
+        include_plotlyjs=True if embed_plotly else "cdn",
         config={"displayModeBar": True, "responsive": True},
     )
 
@@ -745,12 +746,17 @@ def _write_html(document, io_target):
         target.write(document)
 
 
-def to_html(results, io_target=sys.stdout, thresholds=None):
+def to_html(results, io_target=sys.stdout, thresholds=None, embed_plotly=False):
+    """Write the HTML report, inlining plotly.js when embed_plotly is set.
+
+    The inlined report is several megabytes larger but needs no network access
+    to open, where the default only carries a script tag for the plotly CDN.
+    """
     thresholds = DEFAULT_THRESHOLDS if thresholds is None else thresholds
     results = sorted(results, key=lambda x: x.time_stamp)
 
     document = _assemble_html_document(
-        _build_charts_html(results, thresholds),
+        _build_charts_html(results, thresholds, embed_plotly),
         _build_summary_html(_format_summary_stats(results, thresholds)),
         _build_trace_tables_html(results, thresholds),
         thresholds,

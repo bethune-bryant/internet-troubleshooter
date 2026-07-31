@@ -97,6 +97,12 @@ def cli_input():
         help="Output format, written to stdout. (default: %(default)s)",
     )
     display_cmd.add_argument(
+        "--embed_plotly",
+        action="store_true",
+        help="Inline plotly.js in the HTML report so it opens offline, "
+        "instead of loading it from the plotly CDN.",
+    )
+    display_cmd.add_argument(
         "--target_download_mbps",
         default=PLOT_DOWNLOAD_MBPS,
         type=float,
@@ -280,7 +286,12 @@ def display(args):
         return 1
 
     if args.format == "html":
-        to_html(results, sys.stdout, _display_thresholds(args))
+        to_html(
+            results,
+            sys.stdout,
+            _display_thresholds(args),
+            embed_plotly=args.embed_plotly,
+        )
     else:
         to_human(results, sys.stdout)
 
