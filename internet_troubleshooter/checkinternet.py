@@ -5,9 +5,20 @@ import argparse
 import logging
 from datetime import datetime
 import sys
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from internet_troubleshooter import __version__
+from internet_troubleshooter.config import (
+    ConfigError,
+    Option,
+    as_bool,
+    as_choice,
+    as_float,
+    as_int,
+    as_str,
+    default_config_path,
+    load_config,
+)
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult, default_hop_ping_count
 from internet_troubleshooter.speed_test import SpeedResult
@@ -27,8 +38,45 @@ logger = logging.getLogger(__name__)
 
 STDIN_YAML_FILE = "-"
 
+DISPLAY_FORMATS = ("human", "html")
 
-def cli_input() -> argparse.Namespace:
+# The options of each subcommand that the config file may supply a default for,
+# along with the default used when neither the command line nor the config file
+# sets them. argparse suppresses these defaults so that a parsed namespace holds
+# only what was actually passed, which is what lets the config file fill in the
+# rest without overriding an explicit flag.
+RUN_OPTIONS: Dict[str, Option] = {
+    "ping_ip": Option("8.8.8.8", as_str),
+    "ping_count": Option(None, as_int),
+    "trace_hop_ping_count": Option(None, as_int),
+    "max_packet_loss": Option(3.0, as_float),
+    "skip_speedtest": Option(False, as_bool),
+    "skip_pingtest": Option(False, as_bool),
+    "yaml_file": Option(None, as_str),
+}
+
+DISPLAY_OPTIONS: Dict[str, Option] = {
+    "yaml_file": Option(None, as_str),
+    "format": Option("human", as_choice(DISPLAY_FORMATS)),
+    "html_file": Option(None, as_str),
+    "embed_plotly": Option(False, as_bool),
+    "target_download_mbps": Option(PLOT_DOWNLOAD_MBPS, as_float),
+    "target_upload_mbps": Option(PLOT_UPLOAD_MBPS, as_float),
+    "target_latency_ms": Option(PLOT_LATENCY_MS, as_float),
+    "target_packet_loss_pct": Option(PLOT_PACKET_LOSS_PCT, as_float),
+}
+
+COMMAND_OPTIONS: Dict[str, Dict[str, Option]] = {
+    "run": RUN_OPTIONS,
+    "display": DISPLAY_OPTIONS,
+}
+
+
+def _default_note(options: Dict[str, Option], name: str) -> str:
+    return "(default: {})".format(options[name].default)
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Test internet connection.")
     parser.add_argument(
         "--version",
@@ -41,6 +89,15 @@ def cli_input() -> argparse.Namespace:
         action="store_true",
         help="Print progress and raw command output to stderr.",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        metavar="PATH",
+        help="Config file of defaults to read instead of {}. Values in it are "
+        "used for the options that are not passed on the command line.".format(
+            default_config_path()
+        ),
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -48,40 +105,47 @@ def cli_input() -> argparse.Namespace:
 
     run_cmd.add_argument(
         "--ping_ip",
-        default="8.8.8.8",
-        help="IP address or hostname to ping. (default: %(default)s)",
+        default=argparse.SUPPRESS,
+        help="IP address or hostname to ping. {}".format(
+            _default_note(RUN_OPTIONS, "ping_ip")
+        ),
     )
     run_cmd.add_argument(
         "--ping_count",
-        default=None,
+        default=argparse.SUPPRESS,
         type=int,
         help="Packets to send. (default: 400 as root, otherwise 10)",
     )
     run_cmd.add_argument(
         "--trace_hop_ping_count",
-        default=None,
+        default=argparse.SUPPRESS,
         type=int,
         help="Packets to send to each traceroute hop. "
         "(default: 50 as root, otherwise 10)",
     )
     run_cmd.add_argument(
         "--max_packet_loss",
-        default=3.0,
+        default=argparse.SUPPRESS,
         type=float,
-        help="Packet loss percent above which a traceroute is run. "
-        "(default: %(default)s)",
+        help="Packet loss percent above which a traceroute is run. {}".format(
+            _default_note(RUN_OPTIONS, "max_packet_loss")
+        ),
     )
     run_cmd.add_argument(
-        "--skip_speedtest", action="store_true", help="Do not run the speed test."
+        "--skip_speedtest",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Do not run the speed test.",
     )
     run_cmd.add_argument(
         "--skip_pingtest",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Do not run the ping test, and therefore never traceroute.",
     )
     run_cmd.add_argument(
         "--yaml_file",
-        default=None,
+        default=argparse.SUPPRESS,
         type=str,
         help="File to append this run's results to, for later display.",
     )
@@ -94,53 +158,105 @@ def cli_input() -> argparse.Namespace:
 
     display_cmd.add_argument(
         "--yaml_file",
-        required=True,
-        help="File of logged results to read, or '{}' to read them from stdin.".format(
-            STDIN_YAML_FILE
-        ),
+        default=argparse.SUPPRESS,
+        help="File of logged results to read, or '{}' to read them from stdin. "
+        "Required unless the config file sets it.".format(STDIN_YAML_FILE),
     )
     display_cmd.add_argument(
         "--format",
-        default="human",
-        choices=["human", "html"],
-        help="Output format, written to stdout. (default: %(default)s)",
+        default=argparse.SUPPRESS,
+        choices=DISPLAY_FORMATS,
+        help="Output format, written to stdout unless --html_file names a "
+        "file to write the HTML report to. {}".format(
+            _default_note(DISPLAY_OPTIONS, "format")
+        ),
+    )
+    display_cmd.add_argument(
+        "--html_file",
+        default=argparse.SUPPRESS,
+        type=str,
+        help="File to write the HTML report to instead of stdout. Only used "
+        "with '--format html'.",
     )
     display_cmd.add_argument(
         "--embed_plotly",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Inline plotly.js in the HTML report so it opens offline, "
         "instead of loading it from the plotly CDN.",
     )
     display_cmd.add_argument(
         "--target_download_mbps",
-        default=PLOT_DOWNLOAD_MBPS,
+        default=argparse.SUPPRESS,
         type=float,
-        help="Download speed the HTML report treats as healthy. (default: %(default)s)",
+        help="Download speed the HTML report treats as healthy. {}".format(
+            _default_note(DISPLAY_OPTIONS, "target_download_mbps")
+        ),
     )
     display_cmd.add_argument(
         "--target_upload_mbps",
-        default=PLOT_UPLOAD_MBPS,
+        default=argparse.SUPPRESS,
         type=float,
-        help="Upload speed the HTML report treats as healthy. (default: %(default)s)",
+        help="Upload speed the HTML report treats as healthy. {}".format(
+            _default_note(DISPLAY_OPTIONS, "target_upload_mbps")
+        ),
     )
     display_cmd.add_argument(
         "--target_latency_ms",
-        default=PLOT_LATENCY_MS,
+        default=argparse.SUPPRESS,
         type=float,
-        help="Highest latency the HTML report treats as healthy. "
-        "(default: %(default)s)",
+        help="Highest latency the HTML report treats as healthy. {}".format(
+            _default_note(DISPLAY_OPTIONS, "target_latency_ms")
+        ),
     )
     display_cmd.add_argument(
         "--target_packet_loss_pct",
-        default=PLOT_PACKET_LOSS_PCT,
+        default=argparse.SUPPRESS,
         type=float,
-        help="Highest packet loss the HTML report treats as healthy. "
-        "(default: %(default)s)",
+        help="Highest packet loss the HTML report treats as healthy. {}".format(
+            _default_note(DISPLAY_OPTIONS, "target_packet_loss_pct")
+        ),
     )
 
     display_cmd.set_defaults(func=display)
 
-    return parser.parse_args()
+    return parser
+
+
+def _apply_config_defaults(args: argparse.Namespace) -> None:
+    """Fill in the options the command line left out from the config file.
+
+    Only options missing from the namespace are set, so an explicit flag always
+    wins over the config file, which in turn wins over the built in default.
+    """
+    try:
+        config = load_config(args.config, COMMAND_OPTIONS)
+    except ConfigError as error:
+        print("ERROR: {}".format(error), file=sys.stderr)
+        raise SystemExit(2)
+
+    from_config = config.get(args.command, {})
+    for name, option in COMMAND_OPTIONS[args.command].items():
+        if not hasattr(args, name):
+            setattr(args, name, from_config.get(name, option.default))
+
+
+def _require_display_yaml_file(args: argparse.Namespace) -> None:
+    if args.command != "display" or args.yaml_file is not None:
+        return
+    print(
+        "ERROR: display requires --yaml_file, or 'yaml_file' in the display "
+        "section of the config file.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
+def cli_input() -> argparse.Namespace:
+    args = _build_parser().parse_args()
+    _apply_config_defaults(args)
+    _require_display_yaml_file(args)
+    return args
 
 
 def _validate_ping_ip(ping_ip: str) -> bool:
@@ -310,20 +426,51 @@ def _load_display_results(yaml_file: str) -> Optional[List[TestResult]]:
         return None
 
 
-def display(args: argparse.Namespace) -> int:
-    results = _load_display_results(args.yaml_file)
-    if results is None:
-        return 1
-
-    if args.format == "html":
+def _write_html_report(args: argparse.Namespace, results: List[TestResult]) -> int:
+    """Write the report to --html_file, or to stdout when it names no file."""
+    if args.html_file is None:
         to_html(
             results,
             sys.stdout,
             _display_thresholds(args),
             embed_plotly=args.embed_plotly,
         )
-    else:
-        to_human(results, sys.stdout)
+        return 0
+
+    logger.debug("Writing HTML report to: %s", args.html_file)
+    try:
+        to_html(
+            results,
+            args.html_file,
+            _display_thresholds(args),
+            embed_plotly=args.embed_plotly,
+        )
+    except OSError as error:
+        print(
+            "ERROR: Unable to write report to '{}': {}".format(args.html_file, error),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def display(args: argparse.Namespace) -> int:
+    results = _load_display_results(args.yaml_file)
+    if results is None:
+        return 1
+
+    if args.format == "html":
+        return _write_html_report(args, results)
+
+    # The text summary has nowhere to go but stdout, so an html_file left over
+    # from the config file is not worth failing over, only mentioning.
+    if args.html_file is not None:
+        print(
+            "WARNING: Ignoring --html_file '{}', which only applies to "
+            "'--format html'.".format(args.html_file),
+            file=sys.stderr,
+        )
+    to_human(results, sys.stdout)
 
     return 0
 
