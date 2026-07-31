@@ -86,7 +86,7 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 | `--skip_speedtest` | `run` | off | Skip the Speedtest CLI test. |
 | `--skip_pingtest` | `run` | off | Skip the ping test. This also skips the traceroute, since the traceroute is triggered by the ping result. |
 | `--yaml_file` | `run` | none | Append this run's results to the given file. Without it, results are printed but not recorded. |
-| `--yaml_file` | `display` | required | File of logged results to read. |
+| `--yaml_file` | `display` | required | File of logged results to read, or `-` to read them from stdin. |
 | `--format` | `display` | `human` | `human` for a text summary or `html` for an interactive plot. Both are written to stdout. |
 | `--embed_plotly` | `display` | off | Inline plotly.js in the HTML report so it opens without network access, instead of loading it from the plotly CDN. |
 | `--target_download_mbps` | `display` | `50` | Download speed the HTML report treats as healthy. |
@@ -143,6 +143,15 @@ Packet Loss:
   Max: 1.00%
 $ checkinternet display --yaml_file troubleshooting.yaml --format html > troubleshooting.html
 ```
+
+Passing `-` as the file reads the results from stdin instead, so `display` fits into a pipeline:
+
+```shell
+$ checkinternet display --yaml_file - < troubleshooting.yaml
+$ ssh gateway cat troubleshooting.yaml | checkinternet display --yaml_file - --format html > troubleshooting.html
+```
+
+Reading from stdin with nothing piped in fails with an error rather than reporting an empty summary.
 
 HTML output requires the `html` extra; without it `display --format html` fails with an error stating that plotly is not installed.
 

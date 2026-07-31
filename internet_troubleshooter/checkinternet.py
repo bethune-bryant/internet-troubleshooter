@@ -5,7 +5,7 @@ import argparse
 import logging
 from datetime import datetime
 import sys
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from internet_troubleshooter import __version__
 from internet_troubleshooter.ping_test import PingResult
@@ -24,6 +24,8 @@ from internet_troubleshooter.result import TestResult
 from internet_troubleshooter.utils import configure_logging, is_valid_host
 
 logger = logging.getLogger(__name__)
+
+STDIN_YAML_FILE = "-"
 
 
 def cli_input() -> argparse.Namespace:
@@ -91,7 +93,11 @@ def cli_input() -> argparse.Namespace:
     )
 
     display_cmd.add_argument(
-        "--yaml_file", required=True, help="File of logged results to read."
+        "--yaml_file",
+        required=True,
+        help="File of logged results to read, or '{}' to read them from stdin.".format(
+            STDIN_YAML_FILE
+        ),
     )
     display_cmd.add_argument(
         "--format",
@@ -281,14 +287,32 @@ def _display_thresholds(args: argparse.Namespace) -> RenderThresholds:
     )
 
 
-def display(args: argparse.Namespace) -> int:
+def _load_display_results(yaml_file: str) -> Optional[List[TestResult]]:
+    """Results to show, or None once the reason they are unreadable is reported."""
+    if yaml_file == STDIN_YAML_FILE:
+        content = sys.stdin.read()
+        if not content.strip():
+            print(
+                "ERROR: No results on stdin, expected logged results piped into "
+                "'--yaml_file {}'.".format(STDIN_YAML_FILE),
+                file=sys.stderr,
+            )
+            return None
+        return TestResult.load_yaml(content)
+
     try:
-        results = TestResult.load_results(args.yaml_file)
+        return TestResult.load_results(yaml_file)
     except OSError as error:
         print(
-            "ERROR: Unable to read results from '{}': {}".format(args.yaml_file, error),
+            "ERROR: Unable to read results from '{}': {}".format(yaml_file, error),
             file=sys.stderr,
         )
+        return None
+
+
+def display(args: argparse.Namespace) -> int:
+    results = _load_display_results(args.yaml_file)
+    if results is None:
         return 1
 
     if args.format == "html":
