@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, cast
 
-from internet_troubleshooter.utils import run_command, summarize
+from internet_troubleshooter.utils import LABEL_WIDTH, run_command, summarize
 
 SPEEDTEST_TIMEOUT = 300
 SPEEDTEST_HELP_TIMEOUT = 10
@@ -13,9 +13,6 @@ SPEEDTEST_HELP_TIMEOUT = 10
 # The speedtest CLI reports bandwidth in bytes per second; Mbps is
 # bytes/sec * 8 / 1e6, which is the same as dividing by 125,000.
 BYTES_PER_SEC_TO_MBPS = 125_000
-
-# Pads the labels in the human readable summary so the values line up.
-LABEL_WIDTH = 13
 
 
 @dataclass

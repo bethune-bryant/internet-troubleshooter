@@ -37,7 +37,14 @@ SPEEDTEST_PAYLOAD = {
 
 def make_full_result(time_stamp=1700000000.0):
     return InternetTestResult(
-        ping_result=PingResult(ip="8.8.8.8", packet_loss=1.5),
+        ping_result=PingResult(
+            ip="8.8.8.8",
+            packet_loss=1.5,
+            rtt_min_ms=16.544,
+            rtt_avg_ms=20.312,
+            rtt_max_ms=35.193,
+            rtt_mdev_ms=2.061,
+        ),
         trace_result=TraceResult(
             ping_results=[PingResult(ip="10.0.0.1", packet_loss=0.0), None]
         ),
@@ -74,6 +81,34 @@ def test_human_readable_skips_missing_hops():
     text = output.getvalue()
     assert "Packet Loss: 5.00%" in text
     assert "1.50% 10.0.0.1" in text
+
+
+def test_human_readable_reports_the_ping_round_trip_time():
+    result = InternetTestResult(
+        ping_result=PingResult(ip="8.8.8.8", packet_loss=1.5, rtt_avg_ms=20.312),
+        trace_result=None,
+        speed_result=None,
+    )
+
+    output = io.StringIO()
+    result.human_readable(output)
+    text = output.getvalue()
+    assert "Packet Loss: 1.50%" in text
+    assert "Ping RTT:    20.31ms" in text
+
+
+def test_human_readable_omits_an_unmeasured_round_trip_time():
+    result = InternetTestResult(
+        ping_result=PingResult(ip="8.8.8.8", packet_loss=100.0),
+        trace_result=None,
+        speed_result=None,
+    )
+
+    output = io.StringIO()
+    result.human_readable(output)
+    text = output.getvalue()
+    assert "Packet Loss: 100.00%" in text
+    assert "Ping RTT" not in text
 
 
 def test_human_readable_reports_the_speedtest_context():
@@ -122,7 +157,14 @@ def test_to_dict_uses_snake_case_keys():
     data = make_full_result().to_dict()
 
     assert sorted(data) == ["ping_result", "speed_result", "time_stamp", "trace_result"]
-    assert data["ping_result"] == {"ip": "8.8.8.8", "packet_loss": 1.5}
+    assert data["ping_result"] == {
+        "ip": "8.8.8.8",
+        "packet_loss": 1.5,
+        "rtt_min_ms": 16.544,
+        "rtt_avg_ms": 20.312,
+        "rtt_max_ms": 35.193,
+        "rtt_mdev_ms": 2.061,
+    }
     assert data["trace_result"] == {
         "ping_results": [{"ip": "10.0.0.1", "packet_loss": 0.0}, None]
     }
@@ -183,6 +225,23 @@ def test_load_results_reads_utf8(tmp_path):
 
     loaded = InternetTestResult.load_results(str(yaml_file))
     assert loaded[0].ping_result.ip == "rout\u00e9r.local"
+
+
+def test_load_yaml_without_round_trip_times():
+    """Results logged before the round trip times were recorded still load."""
+    loaded = InternetTestResult.load_yaml(
+        "---\n"
+        "ping_result:\n"
+        "  ip: 8.8.8.8\n"
+        "  packet_loss: 1.5\n"
+        "speed_result: null\n"
+        "time_stamp: 1700000000.0\n"
+        "trace_result: null\n"
+        "...\n"
+    )
+
+    assert loaded == [make_result(1700000000.0, packet_loss=1.5)]
+    assert loaded[0].ping_result.rtt_avg_ms is None
 
 
 def test_load_results_skips_empty_documents(tmp_path):

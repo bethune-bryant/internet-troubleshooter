@@ -47,6 +47,7 @@ COLOR_MUTED = "#9aa4b8"
 COLOR_DOWNLOAD = "#38bdf8"
 COLOR_UPLOAD = "#a78bfa"
 COLOR_LATENCY = "#fbbf24"
+COLOR_PING = "#5eead4"
 COLOR_LOSS = "#f472b6"
 COLOR_BAD = "#f87171"
 
@@ -259,16 +260,19 @@ def _aligned_series(
     List[Optional[float]],
     List[Optional[float]],
     List[Optional[float]],
+    List[Optional[float]],
 ]:
     """Every run's date, with one value list per metric aligned to it.
 
     All the traces share this x axis so that hovering a run reports each of its
-    metrics together; a run that skipped or failed a test carries None.
+    metrics together; a run that skipped or failed a test carries None, as does
+    a ping that measured no round trip time.
     """
     dates = [result.get_date() for result in results]
     download: List[Optional[float]] = []
     upload: List[Optional[float]] = []
     latency: List[Optional[float]] = []
+    ping_rtt: List[Optional[float]] = []
     packet_loss: List[Optional[float]] = []
     for result in results:
         speed = result.speed_result
@@ -276,8 +280,9 @@ def _aligned_series(
         upload.append(None if speed is None else speed.upload)
         latency.append(None if speed is None else speed.latency)
         ping = result.ping_result
+        ping_rtt.append(None if ping is None else ping.rtt_avg_ms)
         packet_loss.append(None if ping is None else ping.packet_loss)
-    return dates, download, upload, latency, packet_loss
+    return dates, download, upload, latency, ping_rtt, packet_loss
 
 
 def _measured(values: Sequence[Optional[float]]) -> List[float]:
@@ -300,22 +305,27 @@ def _hover_texts(
     download: Sequence[Optional[float]],
     upload: Sequence[Optional[float]],
     latency: Sequence[Optional[float]],
+    ping_rtt: Sequence[Optional[float]],
     packet_loss: Sequence[Optional[float]],
 ) -> List[str]:
-    """One hover block per run, listing all four metrics for that run.
+    """One hover block per run, listing every metric for that run.
 
     A unified hover only covers the traces of the subplot being hovered, so
     every trace carries the whole block and any chart reports the full run.
     """
     return [
-        "Download: {}<br>Upload: {}<br>Latency: {}<br>Packet loss: {}".format(
+        (
+            "Download: {}<br>Upload: {}<br>Latency: {}<br>"
+            "Ping RTT: {}<br>Packet loss: {}"
+        ).format(
             _hover_value(run_download, " Mbps"),
             _hover_value(run_upload, " Mbps"),
             _hover_value(run_latency, " ms"),
+            _hover_value(run_rtt, " ms"),
             _hover_value(run_loss, "%"),
         )
-        for run_download, run_upload, run_latency, run_loss in zip(
-            download, upload, latency, packet_loss
+        for run_download, run_upload, run_latency, run_rtt, run_loss in zip(
+            download, upload, latency, ping_rtt, packet_loss
         )
     ]
 
@@ -431,11 +441,19 @@ def _add_latency_chart(
     go: Any,
     xs: Sequence[datetime],
     latency: Sequence[Optional[float]],
+    ping_rtt: Sequence[Optional[float]],
     hover_texts: Sequence[str],
     thresholds: RenderThresholds,
 ) -> None:
-    """Latency on its own row, where the Mbps scale cannot flatten it."""
+    """Latency on its own row, where the Mbps scale cannot flatten it.
+
+    The average round trip time of the ping test shares the row, since it
+    measures the same thing against a different target on the same ms scale.
+    """
     _add_metric_trace(fig, go, 2, xs, latency, "Latency", COLOR_LATENCY, hover_texts)
+    # Latency already carries the hover block for this row, and repeating it
+    # would print every metric twice in the unified hover.
+    _add_metric_trace(fig, go, 2, xs, ping_rtt, "Ping RTT", COLOR_PING, None)
 
     _add_threshold_line(
         fig,
@@ -510,8 +528,8 @@ def _build_charts_figure(
     """Dark themed figure with the speed, latency, and packet loss charts."""
     go, make_subplots = _import_plotly()
 
-    dates, download, upload, latency, packet_loss = _aligned_series(results)
-    hover_texts = _hover_texts(download, upload, latency, packet_loss)
+    dates, download, upload, latency, ping_rtt, packet_loss = _aligned_series(results)
+    hover_texts = _hover_texts(download, upload, latency, ping_rtt, packet_loss)
 
     fig = make_subplots(
         shared_xaxes=True,
@@ -522,7 +540,7 @@ def _build_charts_figure(
     )
 
     _add_speed_chart(fig, go, dates, download, upload, hover_texts, thresholds)
-    _add_latency_chart(fig, go, dates, latency, hover_texts, thresholds)
+    _add_latency_chart(fig, go, dates, latency, ping_rtt, hover_texts, thresholds)
     _add_packet_loss_chart(fig, go, dates, packet_loss, hover_texts, thresholds)
     _add_incomplete_run_markers(fig, results)
 
@@ -620,7 +638,7 @@ def _format_summary_stats(
 
     Expects results sorted by time stamp so the reported range is correct.
     """
-    _, download, upload, latency, packet_loss = _aligned_series(results)
+    _, download, upload, latency, ping_rtt, packet_loss = _aligned_series(results)
 
     incomplete = [
         result
@@ -638,6 +656,11 @@ def _format_summary_stats(
             ),
             _metric_stats(
                 "Latency", "ms", _measured(latency), thresholds.latency_ms, False
+            ),
+            # The ping target is not the speedtest server, but a healthy round
+            # trip to either one is the same figure, so they share a threshold.
+            _metric_stats(
+                "Ping RTT", "ms", _measured(ping_rtt), thresholds.latency_ms, False
             ),
             _metric_stats(
                 "Packet Loss",

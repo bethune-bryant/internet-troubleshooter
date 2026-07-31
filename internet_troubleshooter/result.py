@@ -12,6 +12,7 @@ import yaml
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.trace_test import TraceResult
 from internet_troubleshooter.speed_test import SpeedResult
+from internet_troubleshooter.utils import LABEL_WIDTH
 
 
 @dataclass
@@ -24,9 +25,18 @@ class TestResult:
     def human_readable(self, io_target: TextIO = sys.stdout) -> None:
         if self.ping_result is not None:
             print(
-                "Packet Loss: {:.2f}%".format(self.ping_result.packet_loss),
+                "{:<{}}{:.2f}%".format(
+                    "Packet Loss:", LABEL_WIDTH, self.ping_result.packet_loss
+                ),
                 file=io_target,
             )
+            if self.ping_result.rtt_avg_ms is not None:
+                print(
+                    "{:<{}}{:.2f}ms".format(
+                        "Ping RTT:", LABEL_WIDTH, self.ping_result.rtt_avg_ms
+                    ),
+                    file=io_target,
+                )
 
         if self.trace_result is not None:
             for hop_result in self.trace_result.ping_results:
