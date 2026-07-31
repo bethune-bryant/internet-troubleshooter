@@ -3,7 +3,7 @@ from argparse import Namespace
 
 import pytest
 
-from internet_troubleshooter import checkinternet
+from internet_troubleshooter import __version__, checkinternet
 from internet_troubleshooter.ping_test import PingResult
 from internet_troubleshooter.render import RenderThresholds
 from internet_troubleshooter.result import TestResult as InternetTestResult
@@ -550,6 +550,15 @@ def test_cli_input_requires_command(mocker, capsys):
         checkinternet.cli_input()
     assert excinfo.value.code == 2
     capsys.readouterr()
+
+
+def test_cli_input_version_without_command(mocker, capsys):
+    mocker.patch("sys.argv", ["checkinternet", "--version"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        checkinternet.cli_input()
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out.strip() == "checkinternet {}".format(__version__)
 
 
 def test_main_exits_with_command_status(mocker):

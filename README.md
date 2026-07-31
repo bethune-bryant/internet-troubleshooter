@@ -77,6 +77,7 @@ checkinternet --debug run --yaml_file troubleshooting.yaml
 
 | Flag | Applies to | Default | Description |
 | --- | --- | --- | --- |
+| `--version` | global | n/a | Print the installed version and exit. Works without a subcommand. |
 | `--debug` | global | off | Print progress and the raw output of each command to stderr. |
 | `--ping_ip` | `run` | `8.8.8.8` | IP address or hostname to test against. Must be a valid address or hostname. |
 | `--ping_count` | `run` | 400 as root, else 10 | Number of packets to send to the target. Must be at least 1. |
