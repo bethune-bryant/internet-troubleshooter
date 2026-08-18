@@ -1,0 +1,15 @@
+# Example systemd timer: refresh the HTML report five minutes after each hour.
+#
+# Mirrors the cron pattern of running `checkinternet run` at :00 and
+# `checkinternet display` at :05. Enable with:
+#   sudo systemctl enable --now checkinternet-display.timer
+
+[Unit]
+Description=Refresh internet troubleshooting HTML report hourly
+
+[Timer]
+OnCalendar=*-*-* *:05:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,25 @@
+# Example systemd service for `checkinternet run`.
+#
+# Placeholders (replace before installing):
+#   USER          — unprivileged account, if you choose not to run as root
+#   /home/USER/.../my_env/bin/checkinternet — path to checkinternet in a venv
+#   /opt/internet-troubleshooter/bin/checkinternet — alternate system install path
+#   /etc/checkinternet/config.yaml — config file passed to --config
+#
+# Copy to /etc/systemd/system/ (or /etc/systemd/system/checkinternet.service.d/
+# for overrides), then: sudo systemctl daemon-reload
+#
+# Flood ping (~400 packets) requires root. Leave User= commented out to run as
+# root. Uncomment User=USER to run unprivileged; the test then sends 10 packets
+# and prints a warning (see README "Getting Started").
+
+[Unit]
+Description=Check internet performance
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# User=USER
+ExecStart=/home/USER/git/internet-troubleshooter/my_env/bin/checkinternet --config /etc/checkinternet/config.yaml run
+# ExecStart=/opt/internet-troubleshooter/bin/checkinternet --config /etc/checkinternet/config.yaml run

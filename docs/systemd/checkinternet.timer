@@ -1,0 +1,16 @@
+# Example systemd timer: run the check once per hour on the hour.
+#
+# Pair with docs/systemd/checkinternet.service. Enable with:
+#   sudo systemctl enable --now checkinternet.timer
+#
+# View logs: journalctl -u checkinternet
+
+[Unit]
+Description=Check internet performance hourly
+
+[Timer]
+OnCalendar=*-*-* *:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -386,7 +386,16 @@ from results that were not built from CLI output.
 
 ## Automatic Checking
 
-You can setup a cronjob to automatically run the troubleshooter at some interval. E.g., once every hour between midnight and 7AM:
+You can run the troubleshooter on a schedule with **cron** or **systemd**. Both
+approaches work well; cron is familiar and easy to set up per user, while systemd
+timers integrate with the journal, can wait for the network to come up, and
+catch up after downtime. Example unit files for systemd live in
+[`docs/systemd/`](docs/systemd/).
+
+### Scheduling with cron
+
+You can setup a cronjob to automatically run the troubleshooter at some
+interval. E.g., once every hour between midnight and 7AM:
 
 ```shell
 crontab -e
@@ -395,6 +404,10 @@ crontab -e
 ```bash
 0 0-7 * * * source /home/USER/git/internet-troubleshooter/my_env/bin/activate && checkinternet --debug run --yaml_file /home/USER/troubleshooting.yaml >> /home/USER/troubleshooting.log 2>&1
 ```
+
+Replace `USER` with your login name. The `source .../my_env/bin/activate` line
+activates the virtual environment where `checkinternet` is installed; adjust the
+path if your clone or venv lives elsewhere.
 
 ### Scheduling with a config file
 
@@ -429,40 +442,92 @@ path twice:
 $ checkinternet display
 ```
 
-For a systemd timer, point `--config` at a file of its own so the unit does not
-depend on which user's home directory it runs from.
-`/etc/systemd/system/checkinternet.service`:
+### Scheduling with systemd
 
-```ini
-[Unit]
-Description=Check internet performance
-Wants=network-online.target
-After=network-online.target
+Systemd timers are a good fit when you want system-wide scheduling, structured
+logging in the journal, or units that start only after the network is online.
+The [cron section above](#scheduling-with-cron) covers the same workflow with
+`crontab`; the commands and config file format are identical — only the
+scheduler differs.
 
-[Service]
-Type=oneshot
-ExecStart=/opt/internet-troubleshooter/bin/checkinternet --config /etc/checkinternet/config.yaml run
+Copy the example units from [`docs/systemd/`](docs/systemd/) into
+`/etc/systemd/system/`, edit the placeholders, and enable the timers:
+
+```shell
+sudo cp docs/systemd/checkinternet.service docs/systemd/checkinternet.timer \
+        docs/systemd/checkinternet-display.service docs/systemd/checkinternet-display.timer \
+        /etc/systemd/system/
+# Edit ExecStart paths, optional User=, and --config in the .service files.
+sudo systemctl daemon-reload
+sudo systemctl enable --now checkinternet.timer
+sudo systemctl enable --now checkinternet-display.timer   # optional HTML refresh
 ```
 
-`/etc/systemd/system/checkinternet.timer`:
+| File | Purpose |
+| --- | --- |
+| `checkinternet.service` | Runs `checkinternet run` once (triggered by its timer). |
+| `checkinternet.timer` | Fires the run service every hour on the hour. |
+| `checkinternet-display.service` | Runs `checkinternet display` to rebuild the HTML report. |
+| `checkinternet-display.timer` | Fires the display service at five past each hour, after the run. |
 
-```ini
-[Unit]
-Description=Check internet performance hourly
+**Placeholders** in the example units (also documented as comments in each file):
 
-[Timer]
-OnCalendar=hourly
-Persistent=true
+- `USER` — login name when running the service as an unprivileged account.
+- `/home/USER/git/internet-troubleshooter/my_env/bin/checkinternet` — `checkinternet` inside a virtualenv; use the venv's `bin` directory, not a bare `python -m`.
+- `/opt/internet-troubleshooter/bin/checkinternet` — alternate path if you installed the package system-wide.
+- `/etc/checkinternet/config.yaml` — config file passed to `--config`; keeps the unit independent of any user's home directory.
+- `run.yaml_file` and `display.html_file` in that config — where results and the HTML report are written; both must be writable by the user the service runs as.
 
-[Install]
-WantedBy=timers.target
+Point `--config` at a dedicated file for systemd rather than
+`~/.config/checkinternet/config.yaml`, so the unit does not depend on which
+user's home directory it runs from:
+
+```yaml
+# /etc/checkinternet/config.yaml
+run:
+  ping_ip: 1.1.1.1
+  max_packet_loss: 2.0
+  yaml_file: /var/log/internet-troubleshooter/results.yaml
+
+display:
+  yaml_file: /var/log/internet-troubleshooter/results.yaml
+  format: html
+  html_file: /var/www/html/troubleshooting.html
+  embed_plotly: true
 ```
 
-Enable it with `sudo systemctl enable --now checkinternet.timer`. The service
-writes its results to whatever `run.yaml_file` names in
-`/etc/checkinternet/config.yaml`, so that directory has to be writable by the
-user the unit runs as, and stdout lands in the journal
-(`journalctl -u checkinternet`).
+Create the log directory and config before enabling the timer:
+
+```shell
+sudo mkdir -p /etc/checkinternet /var/log/internet-troubleshooter
+sudo install -m 644 -o root -g root /dev/stdin /etc/checkinternet/config.yaml <<'EOF'
+run:
+  ping_ip: 1.1.1.1
+  max_packet_loss: 2.0
+  yaml_file: /var/log/internet-troubleshooter/results.yaml
+
+display:
+  yaml_file: /var/log/internet-troubleshooter/results.yaml
+  format: html
+  html_file: /var/www/html/troubleshooting.html
+  embed_plotly: true
+EOF
+```
+
+**Root vs unprivileged user.** Flood ping sends ~400 packets in a few seconds
+and requires root (see [Getting Started](#getting-started)). The example
+`checkinternet.service` runs as root by default — leave `User=` commented out.
+To run as a normal user instead, uncomment `User=USER` in both service files;
+the test then falls back to 10 packets and prints a warning. Either way,
+`run.yaml_file` and `display.html_file` must be writable by that account.
+
+**Cron vs systemd.** Cron keeps everything in a per-user crontab and is easy to
+redirect to a log file. Systemd stores stdout and stderr in the journal
+(`journalctl -u checkinternet`, `journalctl -u checkinternet-display`), declares
+a dependency on `network-online.target` so the check waits for connectivity, and
+sets `Persistent=true` on the timer so a missed run is made up after the machine
+was off. Pick whichever scheduler you already use on the host; the
+`checkinternet` invocation and config file are the same.
 
 ## Development
 

@@ -1,0 +1,18 @@
+# Example systemd service for `checkinternet display`.
+#
+# Regenerates the HTML report from the results file named in the config.
+# Schedule this a few minutes after checkinternet.service (see
+# checkinternet-display.timer) so each run is recorded before the report is built.
+#
+# Placeholders: same as checkinternet.service (USER, venv/install path, config path).
+
+[Unit]
+Description=Generate internet troubleshooting HTML report
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# User=USER
+ExecStart=/home/USER/git/internet-troubleshooter/my_env/bin/checkinternet --config /etc/checkinternet/config.yaml display
+# ExecStart=/opt/internet-troubleshooter/bin/checkinternet --config /etc/checkinternet/config.yaml display
